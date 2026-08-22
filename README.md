@@ -1,298 +1,358 @@
-# CDK Drive / BlueZone Reset and Removal Tool
+# CDK Drive / BlueZone Reset Tool
 
-A Windows remediation script for local reset or removal of legacy CDK Drive, ADP webSuite, BlueZone, BlueZone VBA, ADPInit, CDKInit, and related cached/configuration data.
+A PowerShell remediation utility for resetting or removing legacy CDK Drive, ADP webSuite, BlueZone, BlueZone VBA, ADPInit, CDKInit, and related local data.
 
 The script supports:
 
-- Basic reset for the current user.
-- Basic reset for a known local profile, user SID, or all normal local profiles.
-- Thorough computer-wide software removal.
-- Full profile cleanup plus machine-wide removal.
-- Microsoft Entra joined, Active Directory joined, workgroup, and local-account computers.
+- Basic reset of user-specific cache and configuration data.
+- Thorough machine-wide cleanup and removal of known BlueZone/CDK/ADP components.
+- Full user-profile cleanup followed by machine-wide removal.
+- Microsoft Entra joined, AD-joined, workgroup, and local-account Windows computers.
+- Current-user, exact profile-path, SID, best-effort identity, and all-local-profile targeting.
 - Microsoft Edge cache cleanup.
-- BlueZone user-data backup before BlueZone folders are removed.
-- Text-file logging and Windows Event Viewer summary events.
-- Interactive menu or scripted command-line use.
+- BlueZone configuration/macro backups before active data is removed.
+- Detailed text logging and Windows Application Event Log summaries.
+- Interactive menu or scripted PowerShell use.
 
-> **Warning:** This tool force-closes applications and removes local cache/configuration data. Thorough and Full-user modes can uninstall software, remove application folders, and remove machine-wide registry entries. Test in a pilot environment before broad deployment.
-
----
-
-## Quick Start
-
-### Basic reset for the signed-in user
-
-Have the affected user run:
-
-```bat
-CDK-BlueZone-Reset.cmd basic
-```
-
-This performs a cache/configuration reset for the user who launches the script.
-
-### Thorough machine-wide removal
-
-Run from an elevated Administrator account or an elevated management tool:
-
-```bat
-CDK-BlueZone-Reset.cmd thorough
-```
-
-This does **not** reset the administrator’s own user profile.
-
-### Reset all existing normal user profiles
-
-Run elevated:
-
-```bat
-CDK-BlueZone-Reset.cmd basic --all-users
-```
-
-### Full user-profile cleanup plus machine-wide removal
-
-Run elevated:
-
-```bat
-CDK-BlueZone-Reset.cmd full-user --all-users
-```
+> **Warning:** The tool force-closes CDK Drive, BlueZone, Edge, and related processes. Unsaved work can be lost. Thorough and FullUser modes can uninstall applications, remove local data, delete application folders, and remove selected machine-wide registry entries. Test on a pilot machine before production use.
 
 ---
 
 ## Requirements
 
 - Windows 10 or Windows 11.
-- PowerShell available on the device.
-- `robocopy.exe`, `eventcreate.exe`, `msiexec.exe`, `reg.exe`, and `taskkill.exe`.
+- Windows PowerShell 5.1 or newer PowerShell with Windows management cmdlets available.
+- `robocopy.exe`, `eventcreate.exe`, `msiexec.exe`, `takeown.exe`, `icacls.exe`, and `regsvr32.exe`.
 - Administrator permissions for:
-  - `thorough` mode.
-  - `full-user` mode.
-  - Any targeted-profile option:
-    - `--profile-path`
-    - `--sid`
-    - `--users`
-    - `--all-users`
-- Targeted user profiles must already exist locally on the endpoint.
+  - `Thorough` mode.
+  - `FullUser` mode.
+  - Any profile targeting other than the current account.
+  - `-AllUsers`.
+- Targeted profiles must already exist locally on the computer.
+
+---
+
+## Installation
+
+Save the script as:
+
+```text
+CDK-BlueZone-Reset.ps1
+```
+
+Before running downloaded scripts, review the code and follow your organization’s PowerShell execution-policy and code-signing requirements.
+
+For a one-time local launch, an administrator may use:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\CDK-BlueZone-Reset.ps1
+```
+
+This does not change the computer’s persistent execution policy.
+
+---
+
+## Quick Start
+
+Open an interactive menu:
+
+```powershell
+.\CDK-BlueZone-Reset.ps1
+```
+
+Run a Basic reset for the current user:
+
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode Basic
+```
+
+Run Thorough machine-wide cleanup from an elevated PowerShell session:
+
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode Thorough
+```
+
+Run profile cleanup for every existing normal local user profile:
+
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode Basic -AllUsers
+```
+
+Run selected user-profile cleanup plus machine-wide removal:
+
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode FullUser -AllUsers
+```
+
+Show help:
+
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Help
+```
+
+---
+
+## Interactive Menu
+
+When run without `-Mode`, the tool displays:
+
+```text
+ Basic profile reset[1]
+    Reset cache and configuration data for the current account.
+    Does not uninstall CDK Drive, BlueZone, or ADP components.
+
+ Thorough machine cleanup[2]
+    Requires Administrator privileges.
+    Removes machine-wide CDK/BlueZone/ADP components, cache data,
+    residual folders, and selected registry entries.
+    Does not alter any user profile.
+
+ Full user and machine cleanup[3]
+    Requires Administrator privileges.
+    Resets the current account profile, then runs machine cleanup.
+    Use only when the current account is the profile to be reset.
+
+[Q] Quit
+    Exit without making any changes.
+```
+
+The interactive menu intentionally targets only the account that launches PowerShell. To target another profile or all profiles, use the command-line options below.
 
 ---
 
 ## Modes
 
-| Mode | Purpose | Requires Administrator | User profiles affected |
+| Mode | Purpose | Administrator required | User profiles affected |
 |---|---|---:|---|
-| `basic` | Resets local user cache/configuration data | Only if targeting other users | Current user by default; selected profiles when specified |
-| `thorough` | Removes BlueZone/CDK/ADP computer-wide components and remnants | Yes | None |
-| `full-user` | Runs user-profile cleanup and computer-wide removal | Yes | Current user by default; selected profiles when specified |
+| `Basic` | Clears selected profile cache/configuration data | Only for non-current targets | Current account by default; explicit selected profiles when specified |
+| `Thorough` | Removes machine-wide BlueZone/CDK/ADP components and remnants | Yes | None |
+| `FullUser` | Runs selected profile cleanup, then Thorough machine cleanup | Yes | Current account by default; explicit selected profiles when specified |
 
 ### Recommended workflow
 
-For a normal user-profile remediation:
+For a normal cache/profile remediation:
 
-1. Have the affected employee run:
+1. Have the affected user run:
 
-   ```bat
-   CDK-BlueZone-Reset.cmd basic
+   ```powershell
+   .\CDK-BlueZone-Reset.ps1 -Mode Basic
    ```
 
-2. If a full application removal is required, IT runs:
+2. If a full uninstall/removal is necessary, IT runs:
 
-   ```bat
-   CDK-BlueZone-Reset.cmd thorough
+   ```powershell
+   .\CDK-BlueZone-Reset.ps1 -Mode Thorough
    ```
 
-This avoids accidentally clearing the elevated administrator’s own profile.
+This two-stage method prevents an elevated IT account from inadvertently clearing its own profile while handling a different user’s computer.
 
 ---
 
-## User Targeting
+## Profile Targeting
 
-The script uses Windows profile inventory instead of guessing that an account name, Entra UPN, or domain username equals the profile-folder name.
+The script uses `Win32_UserProfile` to identify actual existing Windows profiles. It does not assume the Entra UPN, AD account name, or local username matches the folder beneath `C:\Users`.
 
-For example, an Entra sign-in might be:
+For example, an Entra sign-in identity might be:
 
 ```text
 jane.smith@contoso.com
 ```
 
-but the actual local profile folder could be:
+while the Windows profile folder might be:
 
 ```text
 C:\Users\janes
 ```
 
-### Current user
+### Current process account
 
-No profile-targeting argument means the script targets the profile belonging to the account that launches the script:
+With no targeting argument, the script selects the profile belonging to the account that runs PowerShell:
 
-```bat
-CDK-BlueZone-Reset.cmd basic
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode Basic
 ```
 
-### Exact profile path
+### Exact local profile path
 
-Target an existing local profile folder:
+Use `-ProfilePath` when you know the existing local profile folder:
 
-```bat
-CDK-BlueZone-Reset.cmd basic --profile-path "C:\Users\janes"
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode Basic -ProfilePath 'C:\Users\janes'
 ```
 
-Target multiple profiles:
+Target more than one profile:
 
-```bat
-CDK-BlueZone-Reset.cmd basic ^
-  --profile-path "C:\Users\janes" ^
-  --profile-path "C:\Users\jdoe"
+```powershell
+.\CDK-BlueZone-Reset.ps1 `
+  -Mode Basic `
+  -ProfilePath 'C:\Users\janes', 'C:\Users\jdoe'
 ```
 
-### SID
+### Windows profile SID
 
-Target a profile using its Windows SID:
+Use `-Sid` when your RMM, Intune, SCCM, or inventory system has the profile SID:
 
-```bat
-CDK-BlueZone-Reset.cmd basic --sid "S-1-12-1-123456789-123456789-123456789-123456789"
+```powershell
+.\CDK-BlueZone-Reset.ps1 `
+  -Mode Basic `
+  -Sid 'S-1-12-1-123456789-123456789-123456789-123456789'
 ```
 
-Multiple SIDs may be provided:
+Multiple SIDs:
 
-```bat
-CDK-BlueZone-Reset.cmd basic ^
-  --sid "S-1-12-1-111111111-222222222-333333333-444444444" ^
-  --sid "S-1-5-21-111111111-222222222-333333333-1001"
+```powershell
+.\CDK-BlueZone-Reset.ps1 `
+  -Mode Basic `
+  -Sid 'S-1-12-1-111111111-222222222-333333333-444444444',
+       'S-1-5-21-111111111-222222222-333333333-1001'
 ```
 
-### Account/user identity
+### Best-effort user identity
 
-The script accepts identity-like values including:
+Use `-User` to attempt matching against existing local profile-folder names:
+
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode Basic -User 'jane.smith@contoso.com'
+```
+
+The script accepts inputs shaped like:
 
 ```text
 user@company.com
 AzureAD\user@company.com
 DOMAIN\username
-COMPUTERNAME\localuser
+COMPUTER\localuser
 ```
 
-Example:
-
-```bat
-CDK-BlueZone-Reset.cmd basic --users "jane.smith@contoso.com"
-```
-
-> `--users` is best-effort. The Windows device may not be able to reliably map a UPN, Entra identity, AD account, or local account name to a profile folder while running offline or as `SYSTEM`. For unattended deployments, prefer `--profile-path`, `--sid`, or `--all-users`.
+> `-User` is best-effort only. On Entra-joined and AD-joined computers, an identity cannot always be mapped offline to a unique profile folder or SID. For unattended deployment, use `-ProfilePath`, `-Sid`, or `-AllUsers`.
 
 ### All normal local profiles
 
-To process every real existing Windows profile on the endpoint:
+Use `-AllUsers` to clean every existing non-special Windows profile:
 
-```bat
-CDK-BlueZone-Reset.cmd basic --all-users
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode Basic -AllUsers
 ```
 
-The script excludes profiles Windows identifies as Special, such as Default, Public, SYSTEM, Local Service, and Network Service.
+It excludes Windows profiles marked as Special, including service/system-style profiles such as:
 
-> **Caution:** `--all-users` clears targeted caches/configuration for every eligible user profile found on the computer. Use it only when that is intended.
+- Default
+- Public
+- SYSTEM
+- Local Service
+- Network Service
+
+> **Caution:** `-AllUsers` can reset cache/configuration data for every eligible profile on the endpoint. Run it elevated and use it only when that scope is intended.
 
 ---
 
 ## Command Reference
 
-Display script help:
-
-```bat
-CDK-BlueZone-Reset.cmd --help
-```
-
-Open the interactive menu:
-
-```bat
-CDK-BlueZone-Reset.cmd
-```
-
-Basic reset for the current user:
-
-```bat
-CDK-BlueZone-Reset.cmd basic
-```
-
-Basic reset for a known profile:
-
-```bat
-CDK-BlueZone-Reset.cmd basic --profile-path "C:\Users\janes"
-```
-
-Basic reset for every normal local profile:
-
-```bat
-CDK-BlueZone-Reset.cmd basic --all-users
-```
-
-Thorough computer-wide removal only:
-
-```bat
-CDK-BlueZone-Reset.cmd thorough
-```
-
-Full cleanup for all existing normal profiles plus computer-wide removal:
-
-```bat
-CDK-BlueZone-Reset.cmd full-user --all-users
-```
-
-Full cleanup for a selected profile plus computer-wide removal:
-
-```bat
-CDK-BlueZone-Reset.cmd full-user --profile-path "C:\Users\janes"
-```
+| Action | Example |
+|---|---|
+| Interactive menu | `.\CDK-BlueZone-Reset.ps1` |
+| Help | `.\CDK-BlueZone-Reset.ps1 -Help` |
+| Basic reset, current user | `.\CDK-BlueZone-Reset.ps1 -Mode Basic` |
+| Basic reset, one profile | `.\CDK-BlueZone-Reset.ps1 -Mode Basic -ProfilePath 'C:\Users\janes'` |
+| Basic reset, one SID | `.\CDK-BlueZone-Reset.ps1 -Mode Basic -Sid 'S-1-12-1-...'` |
+| Basic reset, all profiles | `.\CDK-BlueZone-Reset.ps1 -Mode Basic -AllUsers` |
+| Thorough machine cleanup | `.\CDK-BlueZone-Reset.ps1 -Mode Thorough` |
+| Full cleanup, selected profile | `.\CDK-BlueZone-Reset.ps1 -Mode FullUser -ProfilePath 'C:\Users\janes'` |
+| Full cleanup, all profiles | `.\CDK-BlueZone-Reset.ps1 -Mode FullUser -AllUsers` |
 
 ---
 
-## What Basic Mode Does
+## Basic Mode
 
-For each selected Windows profile, Basic mode:
+Basic mode performs user-profile cleanup only.
+
+For each selected Windows profile, it:
 
 - Stops CDK Drive, BlueZone, Edge, and related processes.
-- Removes Microsoft Edge cache-focused folders.
-- Removes the ClickOnce cache:
-  - `AppData\Local\Apps\2.0`
+- Clears Microsoft Edge cache-focused folders.
+- Removes the ClickOnce application cache:
+
+  ```text
+  AppData\Local\Apps\2.0
+  ```
+
 - Removes the downloaded .NET assembly cache:
-  - `AppData\Local\assembly\dl3`
-- Removes ADP user data:
-  - `AppData\Roaming\ADP`
-- Backs up BlueZone folders before removing their active copies:
-  - `AppData\Roaming\BlueZone`
-  - `AppData\Roaming\BlueZone Web`
-  - `Documents\BlueZone`
 
-When Basic mode runs directly as the affected user, it additionally clears legacy Internet Explorer / Internet Options data for that same user.
+  ```text
+  AppData\Local\assembly\dl3
+  ```
 
----
+- Removes local ADP roaming-profile data:
 
-## What Thorough Mode Does
+  ```text
+  AppData\Roaming\ADP
+  ```
 
-Thorough mode performs machine-wide cleanup only:
+- Backs up and then removes active BlueZone profile folders:
 
-- Requires Administrator privileges.
-- Stops BlueZone/CDK/Edge-related processes.
-- Removes machine cache locations:
-  - `C:\ProgramData\ADP\websuite`
-  - `C:\ProgramData\CDK\Drive`
-- Attempts silent uninstalls for listed legacy BlueZone/ADP/CDK MSI products.
-- Removes known residual BlueZone/ADP program folders.
-- Deletes selected BlueZone/ADP machine-wide registry entries.
-- Unregisters `sglw2hcm.ocx`, if present.
+  ```text
+  AppData\Roaming\BlueZone
+  AppData\Roaming\BlueZone Web
+  Documents\BlueZone
+  ```
 
-Thorough mode does **not** alter a user profile’s:
+When Basic mode targets the account running PowerShell, it also clears legacy Internet Explorer / Internet Options browsing data for that account.
 
-- `%APPDATA%`
-- `%LOCALAPPDATA%`
-- `%USERPROFILE%\Documents`
-- `HKCU` registry hive
-- Edge cache/profile
-- IE data
-
-This is intentional so an elevated administrator or deployment agent does not clean its own user profile.
+When Basic mode targets another user profile or `-AllUsers`, Internet Explorer cleanup is intentionally skipped. It is a per-user browser operation that cannot safely be redirected to another offline profile with the same mechanism.
 
 ---
 
-## Edge Cleanup
+## Thorough Mode
+
+Thorough mode is machine-wide only and requires Administrator privileges.
+
+It:
+
+- Stops CDK Drive, BlueZone, Edge, and related processes.
+- Removes machine cache folders:
+
+  ```text
+  C:\ProgramData\ADP\websuite
+  C:\ProgramData\CDK\Drive
+  ```
+
+- Attempts silent MSI uninstalls for known legacy BlueZone, BlueZone VBA, ADPInit, CDKInit, and related components.
+- Runs the legacy BlueZone VBA executable uninstaller if it exists.
+- Removes known residual ADP/BlueZone program folders.
+- Removes selected machine-wide BlueZone/ADP registry entries.
+- Unregisters and moves `sglw2hcm.ocx` if present.
+
+Thorough mode intentionally does **not** change:
+
+- User `%APPDATA%`
+- User `%LOCALAPPDATA%`
+- User Documents folders
+- User `HKCU` registry keys
+- Microsoft Edge user-profile data
+- Legacy IE data
+
+Target arguments passed with Thorough mode are ignored because Thorough mode is designed as machine-only cleanup.
+
+---
+
+## FullUser Mode
+
+`FullUser` requires Administrator privileges and combines:
+
+1. Selected user-profile cleanup.
+2. Thorough machine-wide cleanup.
+
+Example:
+
+```powershell
+.\CDK-BlueZone-Reset.ps1 -Mode FullUser -AllUsers
+```
+
+For a managed deployment running as `SYSTEM`, use `-ProfilePath`, `-Sid`, or `-AllUsers` rather than relying on the process account. The SYSTEM profile is not the interactive user’s profile.
+
+---
+
+## Microsoft Edge Cleanup
 
 The script force-closes:
 
@@ -301,73 +361,75 @@ msedge.exe
 msedgewebview2.exe
 ```
 
-For each selected user profile, it clears cache-related data under:
+For each selected profile, it clears cache-oriented data below:
 
 ```text
 AppData\Local\Microsoft\Edge\User Data
 ```
 
-Examples include:
+This includes cache locations such as:
 
-- Browser Cache
-- Code Cache
-- GPU Cache
-- Network Cache
-- Service Worker cache
-- Shader cache
-- Graphics cache
+- `Cache`
+- `Code Cache`
+- `GPUCache`
+- `Network\Cache`
+- `Service Worker\CacheStorage`
+- `Service Worker\ScriptCache`
+- Shader/graphics cache folders
 
-The script deliberately does **not** delete the full Edge `User Data` folder.
+The script deliberately does **not** remove Edge’s full `User Data` folder.
 
 It should preserve:
 
-- Edge browser profiles.
-- Favorites.
-- Extensions.
-- Saved passwords.
-- Browser settings.
-- Most cookies and sign-in/session state.
-- Browsing history.
+- Browser profiles
+- Favorites
+- Saved passwords
+- Extensions
+- Browser preferences
+- Most session and sign-in state
+- Browsing history
 
-Users may need to reload websites or allow a web application to recreate its local cache after the reset.
+Users may need to reload websites after cache cleanup.
 
 ---
 
-## Logging
+## BlueZone Backup Locations
 
-### Text logs
-
-The script creates timestamped logs.
-
-When the script is elevated or can write to ProgramData:
-
-```text
-C:\ProgramData\CDKBlueZoneReset\Logs\
-```
-
-When Basic mode runs without ProgramData permissions:
-
-```text
-%LOCALAPPDATA%\CDKBlueZoneReset\Logs\
-```
-
-### BlueZone backups
-
-BlueZone backups are stored under:
+When elevated, BlueZone data is backed up under:
 
 ```text
 C:\ProgramData\CDKBlueZoneReset\Backups\<ProfileFolder>\<Timestamp>\
 ```
 
-When a standard user cannot write to ProgramData, backups are stored under:
+When Basic mode runs without elevation, backup data is stored under:
 
 ```text
 %LOCALAPPDATA%\CDKBlueZoneReset\Backups\<ProfileFolder>\<Timestamp>\
 ```
 
-### Windows Event Viewer
+The backup operation uses `robocopy`. If a backup returns an exit code of 8 or higher, the source BlueZone folder is retained and a warning is logged.
 
-The script writes summary events to:
+---
+
+## Logging and Event Viewer
+
+### Text logs
+
+When elevated:
+
+```text
+C:\ProgramData\CDKBlueZoneReset\Logs\
+```
+
+When running non-elevated Basic mode:
+
+```text
+%LOCALAPPDATA%\CDKBlueZoneReset\Logs\
+```
+
+### Windows Event Log
+
+Summary entries are written to:
 
 ```text
 Event Viewer
@@ -375,7 +437,7 @@ Event Viewer
     > Application
 ```
 
-Filter Event Viewer by source:
+Use this Event source filter:
 
 ```text
 CDKBlueZoneReset
@@ -386,60 +448,16 @@ CDKBlueZoneReset
 | 1000 | Basic profile reset started |
 | 1001 | Basic profile reset completed |
 | 1002 | Basic profile reset completed with warnings |
-| 2000 | Thorough machine-wide removal started |
-| 2001 | Thorough machine-wide removal completed |
-| 2002 | Thorough removal was requested without elevation |
+| 2000 | Thorough machine cleanup started |
+| 2001 | Thorough machine cleanup completed |
 | 2100 | MSI uninstall returned an unexpected exit code |
-| 3000 | Full-user cleanup started |
-| 3001 | Full-user cleanup completed |
-| 3002 | Full-user cleanup was requested without elevation |
-| 3003 | Full-user cleanup completed with profile warnings |
-| 4002 | Targeted profile cleanup was requested without elevation |
+| 3000 | Full user and machine cleanup started |
+| 3001 | Full user and machine cleanup completed |
+| 3003 | Full user and machine cleanup completed with warnings |
+| 4002 | Administrator privileges were required but unavailable |
 | 4100 | Individual profile cleanup started |
 | 4101 | Individual profile cleanup completed |
-| 4102 | Profile-cleanup warning |
-
----
-
-## Deployment Notes
-
-### Standard-user execution
-
-For a local cache/configuration reset, the employee can run:
-
-```bat
-CDK-BlueZone-Reset.cmd basic
-```
-
-This targets only their own profile.
-
-### RMM, Intune, SCCM, or SYSTEM execution
-
-When a deployment system runs as `SYSTEM`, standard environment variables such as `%USERPROFILE%`, `%APPDATA%`, and `%LOCALAPPDATA%` belong to the SYSTEM profile.
-
-For managed deployment, use explicit targeting:
-
-```bat
-CDK-BlueZone-Reset.cmd basic --profile-path "C:\Users\janes"
-```
-
-or:
-
-```bat
-CDK-BlueZone-Reset.cmd basic --sid "S-1-12-1-..."
-```
-
-or, for every applicable profile:
-
-```bat
-CDK-BlueZone-Reset.cmd basic --all-users
-```
-
-For computer-wide removal plus user cleanup:
-
-```bat
-CDK-BlueZone-Reset.cmd full-user --all-users
-```
+| 4102 | Profile or cleanup warning |
 
 ---
 
@@ -448,948 +466,1051 @@ CDK-BlueZone-Reset.cmd full-user --all-users
 | Exit code | Meaning |
 |---:|---|
 | `0` | Completed successfully |
-| `1` | Completed with profile-related warnings or no eligible profile was selected |
-| `2` | Invalid argument or mode |
-| `5` | Required Administrator privileges were unavailable |
+| `1` | Completed with warnings, or no eligible profile was selected |
+| `2` | Invalid or unsupported mode |
+| `5` | Administrator privileges were required but unavailable |
 
-Always review the text log and Event Viewer events after a non-zero exit code.
+Review the text log and Event Viewer after a non-zero exit code.
 
 ---
 
 ## Warnings and Limitations
 
-- The script force-closes applications. Unsaved work can be lost.
-- Test all modes in a pilot group or VM before broad deployment.
-- Confirm that the legacy MSI product GUIDs match software used in your environment.
-- The script intentionally does not delete generic Windows Installer `Products`, `Components`, or `UserData` records, because manual removal can corrupt Windows Installer repair/uninstall behavior.
-- Targeted profiles must already exist locally.
-- `--users` may not resolve a UPN or domain identity reliably. Prefer a SID or profile path for unattended actions.
-- OneDrive Known Folder Move or folder redirection can change the actual Documents location. Review this if BlueZone documents/macros are stored outside the local profile `Documents` folder.
-- Backup files remain on the local endpoint. Copy them to approved storage if a central retention/recovery process is required.
+- The tool force-closes applications. Unsaved work can be lost.
+- Test all modes in a VM or pilot group before wider deployment.
+- Confirm the included MSI product codes match software actually used in your environment.
+- The script intentionally does **not** manually delete generic Windows Installer database entries under `Installer\Products`, `Installer\Components`, or `Installer\UserData`; manual deletion can damage Windows Installer repair/uninstall behavior.
+- Target profiles must exist locally before they can be selected.
+- `-User` may not reliably resolve Entra UPNs or AD identities to a local profile. Use `-Sid` or `-ProfilePath` for deterministic automation.
+- OneDrive Known Folder Move or folder redirection may place user Documents data elsewhere than `C:\Users\<profile>\Documents`.
+- BlueZone backups stay on the endpoint unless you collect or copy them through a separate process.
+- The script does not configure Edge to clear browsing data on exit. That is intentionally excluded because it is a persistent browser-policy change, not a one-time reset.
 
 ---
 
-# Script
-
-Save the following code as:
+## Repository Layout
 
 ```text
-CDK-BlueZone-Reset.cmd
+CDK-Global-resetscript/
+├── CDK-BlueZone-Reset.ps1
+├── README.md
+├── CHANGELOG.md
+└── .gitignore
 ```
 
-```bat
-@echo off
-setlocal EnableExtensions DisableDelayedExpansion
+Suggested `.gitignore` entries:
 
-REM ============================================================================
-REM CDK Drive / BlueZone Reset and Removal Tool
-REM ============================================================================
-REM
-REM Supported Windows environments:
-REM   - Microsoft Entra joined / Azure AD joined
-REM   - Active Directory domain joined
-REM   - Workgroup or local-account computers
-REM
-REM USAGE:
-REM   CDK-BlueZone-Reset.cmd
-REM   CDK-BlueZone-Reset.cmd basic
-REM   CDK-BlueZone-Reset.cmd thorough
-REM   CDK-BlueZone-Reset.cmd full-user
-REM   CDK-BlueZone-Reset.cmd --help
-REM
-REM USER TARGETING OPTIONS:
-REM   --profile-path "C:\Users\someprofile"
-REM       Targets a known local Windows profile folder. May be repeated.
-REM
-REM   --sid "S-1-..."
-REM       Targets an existing local Windows profile by SID. May be repeated.
-REM
-REM   --users "identity"
-REM       Attempts to resolve one or more user identities to existing local
-REM       profiles. Values can include:
-REM         user@company.com
-REM         AzureAD\user@company.com
-REM         DOMAIN\username
-REM         COMPUTER\localuser
-REM       May be repeated. If resolution is ambiguous, use --sid or
-REM       --profile-path instead.
-REM
-REM   --all-users
-REM       Targets every existing non-special local Windows profile. Excludes
-REM       Default, Public, SYSTEM, Local Service, Network Service, and other
-REM       Windows Special profiles.
-REM
-REM MODES:
-REM   basic
-REM       Resets selected user profile(s): Edge caches, IE legacy data for the
-REM       current account only, ClickOnce/.NET caches, ADP data, and BlueZone
-REM       data after a timestamped backup.
-REM
-REM   thorough
-REM       Administrator-only machine-wide removal. Does not perform user-profile
-REM       cleanup, even if target-user options are passed.
-REM
-REM   full-user
-REM       Administrator-only. Runs profile cleanup for selected profile(s),
-REM       then runs thorough machine-wide removal.
-REM
-REM WARNING:
-REM   - Targeting profiles other than the current user requires Administrator.
-REM   - --all-users can affect all normal local profiles.
-REM   - Edge and BlueZone processes are force-closed; unsaved work can be lost.
-REM ============================================================================
+```gitignore
+*.log
+*.bak
+*.old
+```
 
-set "SCRIPT_NAME=%~nx0"
-set "MODE="
-set "TARGET_KIND=current"
-set "TARGET_VALUES="
-set "EVENT_LOG=APPLICATION"
-set "EVENT_SOURCE=CDKBlueZoneReset"
-set "LOG_ROOT=%ProgramData%\CDKBlueZoneReset\Logs"
-set "BACKUP_ROOT=%ProgramData%\CDKBlueZoneReset\Backups"
+---
 
-REM Generate a locale-independent timestamp.
-for /f %%I in ('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "STAMP=%%I"
-if not defined STAMP set "STAMP=%DATE:/=-%_%TIME::=-%"
-set "STAMP=%STAMP: =0%"
+## Script
 
-REM Basic mode may run without ProgramData write access.
-if not exist "%LOG_ROOT%" md "%LOG_ROOT%" >nul 2>&1
-if not exist "%LOG_ROOT%" (
-    set "LOG_ROOT=%LocalAppData%\CDKBlueZoneReset\Logs"
-    set "BACKUP_ROOT=%LocalAppData%\CDKBlueZoneReset\Backups"
-)
-if not exist "%LOG_ROOT%" md "%LOG_ROOT%" >nul 2>&1
+Save the production script as:
 
-set "LOG_FILE=%LOG_ROOT%\CDKBlueZoneReset_%STAMP%.log"
-set "PS_HELPER=%TEMP%\CDKBlueZoneReset_ProfileCleanup_%RANDOM%_%RANDOM%.ps1"
+```text
+CDK-BlueZone-Reset.ps1
+```
 
-REM ============================================================================
-REM Parse command-line arguments
-REM ============================================================================
-:ParseArgs
+```powershell
+<#
+.SYNOPSIS
+    CDK Drive / BlueZone Reset and Removal Tool.
 
-if "%~1"=="" goto :ArgumentsParsed
+.DESCRIPTION
+    A single-file PowerShell remediation utility for legacy CDK Drive, ADP
+    webSuite, BlueZone, BlueZone VBA, ADPInit, and CDKInit installations.
 
-if /I "%~1"=="basic" (
-    set "MODE=basic"
-    shift
-    goto :ParseArgs
+    Modes:
+      Basic    - Selected user-profile cache/configuration reset.
+      Thorough - Elevated machine-wide removal only.
+      FullUser - Elevated selected profile reset plus machine-wide removal.
+
+    Supported profile targeting:
+      - Current process account (default)
+      - Exact local profile path
+      - Windows profile SID
+      - Best-effort profile-folder match from an identity
+      - All existing normal local profiles
+
+.NOTES
+    Requires Windows PowerShell 5.1+ or PowerShell with Windows management
+    cmdlets available. Run -Help for usage.
+#>
+
+[CmdletBinding()]
+param(
+    [ValidateSet('Basic', 'Thorough', 'FullUser', 'Help')]
+    [string]$Mode,
+
+    [string[]]$ProfilePath,
+
+    [string[]]$Sid,
+
+    [string[]]$User,
+
+    [switch]$AllUsers,
+
+    [switch]$Help
 )
 
-if /I "%~1"=="thorough" (
-    set "MODE=thorough"
-    shift
-    goto :ParseArgs
-)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Continue'
 
-if /I "%~1"=="full-user" (
-    set "MODE=full-user"
-    shift
-    goto :ParseArgs
-)
+$script:ToolName = 'CDKBlueZoneReset'
+$script:EventLogName = 'Application'
+$script:HadWarnings = $false
+$script:Timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+$script:CurrentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$script:CurrentSid = $script:CurrentIdentity.User.Value
+$script:CurrentAccount = $script:CurrentIdentity.Name
 
-if /I "%~1"=="1" (
-    set "MODE=basic"
-    shift
-    goto :ParseArgs
-)
+$principal = New-Object System.Security.Principal.WindowsPrincipal($script:CurrentIdentity)
+$script:IsAdministrator = $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 
-if /I "%~1"=="2" (
-    set "MODE=thorough"
-    shift
-    goto :ParseArgs
-)
+$programDataRoot = Join-Path $env:ProgramData $script:ToolName
+$userLocalRoot = Join-Path $env:LOCALAPPDATA $script:ToolName
 
-if /I "%~1"=="3" (
-    set "MODE=full-user"
-    shift
-    goto :ParseArgs
-)
+if ($script:IsAdministrator) {
+    $script:LogRoot = Join-Path $programDataRoot 'Logs'
+    $script:BackupRoot = Join-Path $programDataRoot 'Backups'
+}
+else {
+    $script:LogRoot = Join-Path $userLocalRoot 'Logs'
+    $script:BackupRoot = Join-Path $userLocalRoot 'Backups'
+}
 
-if /I "%~1"=="--profile-path" (
-    if "%~2"=="" goto :MissingArgumentValue
-    set "TARGET_KIND=profile-path"
-    set "TARGET_VALUES=%TARGET_VALUES% "%~2""
-    shift
-    shift
-    goto :ParseArgs
-)
+New-Item -ItemType Directory -Path $script:LogRoot -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $script:BackupRoot -Force -ErrorAction SilentlyContinue | Out-Null
 
-if /I "%~1"=="--sid" (
-    if "%~2"=="" goto :MissingArgumentValue
-    set "TARGET_KIND=sid"
-    set "TARGET_VALUES=%TARGET_VALUES% "%~2""
-    shift
-    shift
-    goto :ParseArgs
-)
+$script:LogFile = Join-Path $script:LogRoot ('{0}_{1}.log' -f $script:ToolName, $script:Timestamp)
 
-if /I "%~1"=="--users" (
-    if "%~2"=="" goto :MissingArgumentValue
-    set "TARGET_KIND=users"
-    set "TARGET_VALUES=%TARGET_VALUES% "%~2""
-    shift
-    shift
-    goto :ParseArgs
-)
+function Write-ToolLog {
+    param([Parameter(Mandatory)][string]$Message)
 
-if /I "%~1"=="--all-users" (
-    set "TARGET_KIND=all-users"
-    set "TARGET_VALUES="
-    shift
-    goto :ParseArgs
-)
+    $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
+    try {
+        Add-Content -LiteralPath $script:LogFile -Value $line -Encoding UTF8
+    }
+    catch {
+        Write-Verbose $line
+    }
+}
 
-if /I "%~1"=="--help" goto :Usage
-if /I "%~1"=="/?" goto :Usage
-if /I "%~1"=="-h" goto :Usage
+function Write-ToolEvent {
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Information', 'Warning', 'Error')]
+        [string]$EntryType,
 
-echo.
-echo ERROR: Unknown argument: %~1
-echo Run "%SCRIPT_NAME% --help" for usage.
-exit /b 2
-
-:MissingArgumentValue
-echo.
-echo ERROR: %~1 requires a value.
-echo Run "%SCRIPT_NAME% --help" for usage.
-exit /b 2
-
-:ArgumentsParsed
-
-REM ============================================================================
-REM Interactive menu only when no mode was passed
-REM ============================================================================
-if defined MODE goto :ValidateMode
-
-cls
-echo.
-echo ==========================================================================
-echo                     CDK Drive / BlueZone Tool
-echo ==========================================================================
-echo.
-echo  Basic reset - current logged-on account only[1]
-echo  Thorough removal - administrator required, machine-wide only[2]
-echo  Full-user removal - administrator required[3]
-echo [Q] Quit
-echo.
-choice /C 123Q /N /M "Select an option"
-
-if errorlevel 4 goto :Quit
-if errorlevel 3 set "MODE=full-user"
-if errorlevel 2 set "MODE=thorough"
-if errorlevel 1 set "MODE=basic"
-
-:ValidateMode
-
-REM Thorough intentionally ignores user profile target options.
-if /I "%MODE%"=="thorough" goto :ThoroughMode
-
-REM Targeting any profile other than the current process account requires admin.
-if /I not "%TARGET_KIND%"=="current" (
-    call :RequireAdmin
-    if errorlevel 1 (
-        call :Log "ERROR: User-profile targeting requested without elevation."
-        call :WriteEvent WARNING 4002 "Targeted CDK/BlueZone profile cleanup was requested but not run elevated. User: %USERDOMAIN%\%USERNAME%."
-
-        echo.
-        echo ERROR: --profile-path, --sid, --users, and --all-users require
-        echo Administrator privileges.
-        exit /b 5
+        [Parameter(Mandatory)][int]$EventId,
+        [Parameter(Mandatory)][string]$Message
     )
-)
-
-if /I "%MODE%"=="basic" goto :BasicMode
-if /I "%MODE%"=="full-user" goto :FullUserMode
-
-echo.
-echo ERROR: No valid mode selected.
-exit /b 2
-
-REM ============================================================================
-:BasicMode
-REM ============================================================================
-call :Log "===== BASIC USER-PROFILE RESET STARTED ====="
-call :Log "Process account: %USERDOMAIN%\%USERNAME%"
-call :Log "Profile targeting mode: %TARGET_KIND%"
-call :WriteEvent INFORMATION 1000 "Basic CDK Drive / BlueZone profile reset started. Process account: %USERDOMAIN%\%USERNAME%. Target mode: %TARGET_KIND%."
-
-call :StopApplicationProcesses
-
-REM IE cleanup applies only to the account running this script.
-if /I "%TARGET_KIND%"=="current" call :ClearLegacyBrowserData
-
-call :RunProfileCleanup
-set "PROFILE_RESULT=%ERRORLEVEL%"
-
-if not "%PROFILE_RESULT%"=="0" (
-    call :Log "ERROR: Profile cleanup helper ended with code %PROFILE_RESULT%."
-    call :WriteEvent WARNING 1002 "Basic CDK/BlueZone profile reset completed with warnings. See log: %LOG_FILE%"
-) else (
-    call :Log "===== BASIC USER-PROFILE RESET COMPLETED ====="
-    call :WriteEvent INFORMATION 1001 "Basic CDK/BlueZone profile reset completed. Target mode: %TARGET_KIND%. Log: %LOG_FILE%"
-)
-
-echo.
-echo Basic profile reset finished.
-echo Log: %LOG_FILE%
-goto :EndInteractive
-
-REM ============================================================================
-:ThoroughMode
-REM ============================================================================
-call :RequireAdmin
-if errorlevel 1 (
-    call :Log "ERROR: Thorough mode stopped because the script is not elevated."
-    call :WriteEvent WARNING 2002 "Thorough BlueZone/CDK machine cleanup was requested but not run elevated. User: %USERDOMAIN%\%USERNAME%."
-
-    echo.
-    echo Thorough mode requires Administrator privileges.
-    exit /b 5
-)
-
-call :Log "===== THOROUGH MACHINE-WIDE REMOVAL STARTED ====="
-call :Log "Running elevated as: %USERDOMAIN%\%USERNAME%"
-call :WriteEvent INFORMATION 2000 "Thorough machine-wide BlueZone/CDK removal started by %USERDOMAIN%\%USERNAME%."
-
-REM No user-profile cleanup occurs in this mode.
-call :StopApplicationProcesses
-call :ClearMachineCaches
-call :UninstallKnownProducts
-call :RemoveProgramFolders
-call :RemoveTargetedRegistryKeys
-call :UnregisterLegacyOcx
-
-call :Log "===== THOROUGH MACHINE-WIDE REMOVAL COMPLETED ====="
-call :WriteEvent INFORMATION 2001 "Thorough machine-wide BlueZone/CDK removal completed. No user profiles were targeted. Log: %LOG_FILE%"
-
-echo.
-echo Thorough machine-wide removal completed.
-echo No per-user profile folders were changed.
-echo Log: %LOG_FILE%
-goto :EndInteractive
-
-REM ============================================================================
-:FullUserMode
-REM ============================================================================
-call :RequireAdmin
-if errorlevel 1 (
-    call :Log "ERROR: Full-user mode stopped because the script is not elevated."
-    call :WriteEvent WARNING 3002 "Full user and machine BlueZone/CDK removal was requested but not run elevated. User: %USERDOMAIN%\%USERNAME%."
-
-    echo.
-    echo Full-user mode requires Administrator privileges.
-    exit /b 5
-)
-
-call :Log "===== FULL USER + MACHINE REMOVAL STARTED ====="
-call :Log "Process account: %USERDOMAIN%\%USERNAME%"
-call :Log "Profile targeting mode: %TARGET_KIND%"
-call :WriteEvent INFORMATION 3000 "Full user and machine BlueZone/CDK removal started. Process account: %USERDOMAIN%\%USERNAME%. Target mode: %TARGET_KIND%."
-
-call :StopApplicationProcesses
-
-REM IE cleanup applies only to the account running the script.
-if /I "%TARGET_KIND%"=="current" call :ClearLegacyBrowserData
-
-call :RunProfileCleanup
-set "PROFILE_RESULT=%ERRORLEVEL%"
-
-call :ClearMachineCaches
-call :UninstallKnownProducts
-call :RemoveProgramFolders
-call :RemoveTargetedRegistryKeys
-call :UnregisterLegacyOcx
-
-if not "%PROFILE_RESULT%"=="0" (
-    call :Log "WARNING: Profile helper returned %PROFILE_RESULT%; machine cleanup still completed."
-    call :WriteEvent WARNING 3003 "Full user and machine cleanup completed with profile cleanup warnings. Log: %LOG_FILE%"
-) else (
-    call :Log "===== FULL USER + MACHINE REMOVAL COMPLETED ====="
-    call :WriteEvent INFORMATION 3001 "Full user and machine BlueZone/CDK removal completed. Target mode: %TARGET_KIND%. Log: %LOG_FILE%"
-)
-
-echo.
-echo Full user and machine cleanup finished.
-echo Log: %LOG_FILE%
-goto :EndInteractive
-
-REM ============================================================================
-:StopApplicationProcesses
-REM ============================================================================
-call :Log "Stopping CDK Drive, BlueZone, IE, Edge, and Edge WebView processes."
-
-for %%P in (
-    wsstart.exe
-    wsstart_2.exe
-    wsstart_4.exe
-    BZVT.exe
-    BZVBA.exe
-    dfsvc.exe
-    sw9c.exe
-    legaclt.exe
-    iexplore.exe
-    msedge.exe
-    msedgewebview2.exe
-) do (
-    taskkill /IM "%%P" /F >> "%LOG_FILE%" 2>&1
-)
-
-exit /b 0
-
-REM ============================================================================
-:ClearLegacyBrowserData
-REM ============================================================================
-call :Log "Clearing legacy Internet Explorer data for current process account."
-
-REM This only applies to the account executing the script.
-REM It is not a Microsoft Edge cleanup mechanism.
-RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess 255 >> "%LOG_FILE%" 2>&1
-
-exit /b 0
-
-REM ============================================================================
-:RunProfileCleanup
-REM ============================================================================
-call :Log "Creating and executing multi-profile cleanup helper."
-call :CreatePowerShellHelper
-
-REM TARGET_VALUES contains individually quoted values, including paths/spaces.
-if /I "%TARGET_KIND%"=="current" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_HELPER%" ^
-        -TargetKind "current" ^
-        -BackupRoot "%BACKUP_ROOT%" ^
-        -LogFile "%LOG_FILE%" ^
-        -EventSource "%EVENT_SOURCE%" ^
-        -Stamp "%STAMP%"
-) else (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_HELPER%" ^
-        -TargetKind "%TARGET_KIND%" ^
-        -Targets %TARGET_VALUES% ^
-        -BackupRoot "%BACKUP_ROOT%" ^
-        -LogFile "%LOG_FILE%" ^
-        -EventSource "%EVENT_SOURCE%" ^
-        -Stamp "%STAMP%"
-)
-
-set "PROFILE_RESULT=%ERRORLEVEL%"
-
-if exist "%PS_HELPER%" del /q "%PS_HELPER%" >> "%LOG_FILE%" 2>&1
-
-exit /b %PROFILE_RESULT%
-
-REM ============================================================================
-:CreatePowerShellHelper
-REM ============================================================================
-(
-echo param(
-echo     [Parameter(Mandatory=$true)][ValidateSet('current','profile-path','sid','users','all-users')][string]$TargetKind,
-echo     [string[]]$Targets,
-echo     [Parameter(Mandatory=$true)][string]$BackupRoot,
-echo     [Parameter(Mandatory=$true)][string]$LogFile,
-echo     [Parameter(Mandatory=$true)][string]$EventSource,
-echo     [Parameter(Mandatory=$true)][string]$Stamp
-echo ^)
-echo $ErrorActionPreference = 'Continue'
-echo $script:HadWarnings = $false
-echo
-echo function Write-ToolLog {
-echo     param([string]$Message)
-echo     $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
-echo     Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
-echo ^}
-echo
-echo function Write-ToolEvent {
-echo     param(
-echo         [ValidateSet('INFORMATION','WARNING','ERROR')][string]$Type,
-echo         [int]$Id,
-echo         [string]$Message
-echo     ^)
-echo     ^& eventcreate.exe /l APPLICATION /so $EventSource /t $Type /id $Id /d $Message 2^>^&1 ^| Out-Null
-echo ^}
-echo
-echo function Mark-Warning {
-echo     param([string]$Message)
-echo     $script:HadWarnings = $true
-echo     Write-ToolLog "WARNING: $Message"
-echo     Write-ToolEvent -Type WARNING -Id 4102 -Message $Message
-echo ^}
-echo
-echo function Remove-FolderIfPresent {
-echo     param([string]$Path)
-echo     if (Test-Path -LiteralPath $Path) {
-echo         Write-ToolLog "Removing: $Path"
-echo         try {
-echo             Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
-echo         } catch {
-echo             Mark-Warning "Could not fully remove '$Path'. $($_.Exception.Message)"
-echo         }
-echo     }
-echo ^}
-echo
-echo function Copy-And-Remove {
-echo     param(
-echo         [string]$Source,
-echo         [string]$Destination
-echo     ^)
-echo     if (-not (Test-Path -LiteralPath $Source)) { return }
-echo
-echo     Write-ToolLog "Backing up: $Source -^> $Destination"
-echo     New-Item -ItemType Directory -Path $Destination -Force ^| Out-Null
-echo
-echo     ^& robocopy.exe $Source $Destination /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /XJ /NFL /NDL /NJH /NJS ^| Out-Null
-echo     $rc = $LASTEXITCODE
-echo
-echo     REM Robocopy exit codes 0-7 are non-failure results; 8+ means failure.
-echo     if ($rc -ge 8) {
-echo         Mark-Warning "Backup failed for '$Source' with Robocopy exit code $rc. Source was retained."
-echo         return
-echo     }
-echo
-echo     Remove-FolderIfPresent -Path $Source
-echo ^}
-echo
-echo function Clear-EdgeCaches {
-echo     param([string]$LocalAppData)
-echo
-echo     $edgeRoot = Join-Path $LocalAppData 'Microsoft\Edge\User Data'
-echo     if (-not (Test-Path -LiteralPath $edgeRoot)) {
-echo         Write-ToolLog "Edge user-data folder not found: $edgeRoot"
-echo         return
-echo     }
-echo
-echo     Write-ToolLog "Clearing Edge cache folders under: $edgeRoot"
-echo
-echo     foreach ($relative in @(
-echo         'ShaderCache',
-echo         'GrShaderCache',
-echo         'GraphiteCache',
-echo         'DawnCache',
-echo         'Crashpad\reports'
-echo     )) {
-echo         Remove-FolderIfPresent -Path (Join-Path $edgeRoot $relative)
-echo     }
-echo
-echo     $edgeProfiles = @()
-echo     foreach ($name in @('Default','Guest Profile','System Profile')) {
-echo         $candidate = Join-Path $edgeRoot $name
-echo         if (Test-Path -LiteralPath $candidate) { $edgeProfiles += Get-Item -LiteralPath $candidate }
-echo     }
-echo     $edgeProfiles += Get-ChildItem -LiteralPath $edgeRoot -Directory -Filter 'Profile *' -ErrorAction SilentlyContinue
-echo
-echo     foreach ($edgeProfile in ($edgeProfiles ^| Sort-Object FullName -Unique)) {
-echo         foreach ($relative in @(
-echo             'Cache',
-echo             'Code Cache',
-echo             'GPUCache',
-echo             'DawnCache',
-echo             'Network\Cache',
-echo             'Service Worker\CacheStorage',
-echo             'Service Worker\ScriptCache'
-echo         )) {
-echo             Remove-FolderIfPresent -Path (Join-Path $edgeProfile.FullName $relative)
-echo         }
-echo     }
-echo ^}
-echo
-echo function Get-NormalProfiles {
-echo     Get-CimInstance -ClassName Win32_UserProfile ^| Where-Object {
-echo         -not $_.Special -and
-echo         $_.SID -and
-echo         $_.LocalPath -and
-echo         (Test-Path -LiteralPath $_.LocalPath)
-echo     }
-echo ^}
-echo
-echo function Get-CurrentProfile {
-echo     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-echo     Get-NormalProfiles ^| Where-Object { $_.SID -eq $sid } ^| Select-Object -First 1
-echo ^}
-echo
-echo function Resolve-TargetProfiles {
-echo     $normalProfiles = @(Get-NormalProfiles)
-echo
-echo     switch ($TargetKind) {
-echo         'current' {
-echo             $current = Get-CurrentProfile
-echo             if ($null -eq $current) {
-echo                 Mark-Warning "Could not resolve a normal local profile for the current process account."
-echo                 return @()
-echo             }
-echo             return @($current)
-echo         }
-echo
-echo         'all-users' {
-echo             return $normalProfiles
-echo         }
-echo
-echo         'profile-path' {
-echo             $results = @()
-echo             foreach ($target in $Targets) {
-echo                 $expanded = [Environment]::ExpandEnvironmentVariables($target)
-echo                 $match = $normalProfiles ^| Where-Object {
-echo                     $_.LocalPath.TrimEnd('\') -ieq $expanded.TrimEnd('\')
-echo                 }
-echo                 if ($null -eq $match) {
-echo                     Mark-Warning "No normal existing Windows profile matched path: $target"
-echo                 } else {
-echo                     $results += $match
-echo                 }
-echo             }
-echo             return @($results ^| Sort-Object SID -Unique)
-echo         }
-echo
-echo         'sid' {
-echo             $results = @()
-echo             foreach ($target in $Targets) {
-echo                 $match = $normalProfiles ^| Where-Object { $_.SID -eq $target }
-echo                 if ($null -eq $match) {
-echo                     Mark-Warning "No normal existing Windows profile matched SID: $target"
-echo                 } else {
-echo                     $results += $match
-echo                 }
-echo             }
-echo             return @($results ^| Sort-Object SID -Unique)
-echo         }
-echo
-echo         'users' {
-echo             $results = @()
-echo             foreach ($target in $Targets) {
-echo                 $normalized = $target.Trim()
-echo                 $leaf = ($normalized -split '\\')[-1]
-echo
-echo                 REM User identities cannot always be mapped offline to a SID.
-echo                 REM Match only known local profile folder leaves and warn rather
-echo                 REM than guessing when there is no unique match.
-echo                 $match = $normalProfiles ^| Where-Object {
-echo                     (Split-Path -Path $_.LocalPath -Leaf) -ieq $normalized -or
-echo                     (Split-Path -Path $_.LocalPath -Leaf) -ieq $leaf
-echo                 }
-echo
-echo                 if (@($match).Count -eq 1) {
-echo                     $results += $match
-echo                 } elseif (@($match).Count -gt 1) {
-echo                     Mark-Warning "Identity '$target' matched multiple local profiles. Use --sid or --profile-path instead."
-echo                 } else {
-echo                     Mark-Warning "Could not map identity '$target' to a unique local profile. Use --sid, --profile-path, or --all-users."
-echo                 }
-echo             }
-echo             return @($results ^| Sort-Object SID -Unique)
-echo         }
-echo     }
-echo ^}
-echo
-echo $profiles = @(Resolve-TargetProfiles)
-echo
-echo if ($profiles.Count -eq 0) {
-echo     Mark-Warning "No eligible user profiles were selected for cleanup."
-echo     exit 1
-echo ^}
-echo
-echo Write-ToolLog "Eligible profile count: $($profiles.Count)"
-echo
-echo foreach ($profile in $profiles) {
-echo     $profilePath = $profile.LocalPath
-echo     $profileLeaf = Split-Path -Path $profilePath -Leaf
-echo     $localAppData = Join-Path $profilePath 'AppData\Local'
-echo     $roamingAppData = Join-Path $profilePath 'AppData\Roaming'
-echo     $documentsPath = Join-Path $profilePath 'Documents'
-echo     $backupPath = Join-Path $BackupRoot (Join-Path $profileLeaf $Stamp)
-echo
-echo     Write-ToolLog "Processing profile: Path='$profilePath'; SID='$($profile.SID)'; Loaded='$($profile.Loaded)'"
-echo     Write-ToolEvent -Type INFORMATION -Id 4100 -Message "CDK/BlueZone cleanup started for profile '$profilePath' (SID $($profile.SID))."
-echo
-echo     Clear-EdgeCaches -LocalAppData $localAppData
-echo     Remove-FolderIfPresent -Path (Join-Path $localAppData 'Apps\2.0')
-echo     Remove-FolderIfPresent -Path (Join-Path $localAppData 'assembly\dl3')
-echo     Remove-FolderIfPresent -Path (Join-Path $roamingAppData 'ADP')
-echo
-echo     Copy-And-Remove -Source (Join-Path $roamingAppData 'BlueZone') -Destination (Join-Path $backupPath 'Roaming_BlueZone')
-echo     Copy-And-Remove -Source (Join-Path $roamingAppData 'BlueZone Web') -Destination (Join-Path $backupPath 'Roaming_BlueZone_Web')
-echo     Copy-And-Remove -Source (Join-Path $documentsPath 'BlueZone') -Destination (Join-Path $backupPath 'Documents_BlueZone')
-echo
-echo     Write-ToolLog "Completed profile: $profilePath"
-echo     Write-ToolEvent -Type INFORMATION -Id 4101 -Message "CDK/BlueZone cleanup completed for profile '$profilePath' (SID $($profile.SID))."
-echo ^}
-echo
-echo if ($script:HadWarnings) { exit 1 }
-echo exit 0
-) > "%PS_HELPER%"
-
-exit /b 0
-
-REM ============================================================================
-:ClearMachineCaches
-REM ============================================================================
-call :Log "Clearing machine-wide ADP/CDK cache locations."
-
-rd /s /q "C:\ProgramData\ADP\websuite" >> "%LOG_FILE%" 2>&1
-rd /s /q "C:\ProgramData\CDK\Drive" >> "%LOG_FILE%" 2>&1
-
-exit /b 0
-
-REM ============================================================================
-:UninstallKnownProducts
-REM ============================================================================
-call :Log "Attempting silent uninstall of known BlueZone/ADP components."
-
-call :UninstallMsi "{374C62B2-C3F7-4C33-841E-5AD4627ECF9F}" "BlueZone VBA 6.2"
-call :UninstallMsi "{90F50409-6000-11D3-8CFE-0150048383C9}" "BlueZone VBA component"
-call :UninstallMsi "{90F60409-6000-11D3-8CFE-0150048383C9}" "BlueZone VBA component"
-call :UninstallMsi "{38A229CB-4547-478F-B2C4-FB0D336813FD}" "SGLW2HCM component"
-call :UninstallMsi "{359846D6-19CE-480E-9FDF-02359052CEA4}" "BlueZone patch"
-call :UninstallMsi "{E495B22B-232B-4094-90B3-0FD4BC4B7B64}" "BlueZone patch"
-call :UninstallMsi "{49D3D8A3-F983-40B1-B668-2B7B2C4B2154}" "BlueZone 6.2"
-call :UninstallMsi "{383D7832-FC67-4BFA-816E-88B80A0D95ED}" "BlueZone VBA 6.1"
-call :UninstallMsi "{374C61B2-C3F7-4C33-841E-5AD4627ECF9F}" "BlueZone VBA 6.1"
-call :UninstallMsi "{498CDC54-B572-4B23-8E65-2C95DA2F0D08}" "BlueZone 6.1"
-call :UninstallMsi "{5C6ADDC7-067C-4236-B788-2B3F4B6F47A4}" "BlueZone Rebrander"
-call :UninstallMsi "{69EF9BED-A297-4204-90F0-F1CC803AC4FA}" "BlueZone VBA 952"
-call :UninstallMsi "{374C88B2-C3F7-4C33-841E-5AD4627ECF9F}" "BlueZone 4.1"
-call :UninstallMsi "{5DCA09DF-B911-48BB-82B7-89A35A0F49B7}" "BlueZone 4.1 update"
-call :UninstallMsi "{BB3B5869-A650-425E-9985-76CA48A8DDAF}" "ADPInit"
-call :UninstallMsi "{40FDC133-63DC-4B03-B74B-7573CEB2EA9F}" "CDKInit"
-
-if exist "C:\Program Files (x86)\BlueZone VBA\6.2\BzvbaI.exe" (
-    call :Log "Running BlueZone VBA executable uninstaller."
-    start "" /wait "C:\Program Files (x86)\BlueZone VBA\6.2\BzvbaI.exe" /u >> "%LOG_FILE%" 2>&1
-    call :Log "BlueZone VBA executable uninstaller exit code: %ERRORLEVEL%"
-)
-
-exit /b 0
-
-REM ============================================================================
-:UninstallMsi
-REM ============================================================================
-set "PRODUCT_CODE=%~1"
-set "PRODUCT_NAME=%~2"
-
-call :Log "Uninstall attempt: %PRODUCT_NAME% [%PRODUCT_CODE%]"
-
-REM /x = uninstall; /qn = silent; /norestart = do not reboot automatically.
-start "" /wait msiexec.exe /x %PRODUCT_CODE% /qn /norestart >> "%LOG_FILE%" 2>&1
-
-set "MSI_RESULT=%ERRORLEVEL%"
-call :Log "MSI exit code for %PRODUCT_NAME%: %MSI_RESULT%"
-
-REM Expected outcomes:
-REM   0    success
-REM   1605 product is not installed
-REM   3010 success; restart needed
-if not "%MSI_RESULT%"=="0" if not "%MSI_RESULT%"=="1605" if not "%MSI_RESULT%"=="3010" (
-    call :WriteEvent WARNING 2100 "MSI uninstall returned exit code %MSI_RESULT% for %PRODUCT_NAME% [%PRODUCT_CODE%]. Log: %LOG_FILE%"
-)
-
-exit /b 0
-
-REM ============================================================================
-:RemoveProgramFolders
-REM ============================================================================
-call :Log "Removing residual BlueZone/ADP program folders."
-
-call :RemoveFolder "C:\Program Files (x86)\ADP\websuite TE"
-call :RemoveFolder "C:\Program Files (x86)\BlueZone"
-call :RemoveFolder "C:\Program Files (x86)\BlueZone VBA"
-call :RemoveFolder "C:\Windows\Downloaded Program Files\6.2"
-call :RemoveFolder "C:\ProgramData\BlueZone"
-call :RemoveFolder "C:\Users\Default\Documents\BlueZone"
-call :RemoveFolder "C:\Users\Public\Documents\BlueZone"
-
-exit /b 0
-
-REM ============================================================================
-:RemoveFolder
-REM ============================================================================
-set "TARGET_FOLDER=%~1"
-
-if not exist "%TARGET_FOLDER%" (
-    call :Log "Folder not present: %TARGET_FOLDER%"
-    exit /b 0
-)
-
-call :Log "Removing folder: %TARGET_FOLDER%"
-takeown /f "%TARGET_FOLDER%" /r /d y >> "%LOG_FILE%" 2>&1
-icacls "%TARGET_FOLDER%" /grant Administrators:F /t /c >> "%LOG_FILE%" 2>&1
-attrib -r -s -h "%TARGET_FOLDER%" /s /d >> "%LOG_FILE%" 2>&1
-rd /s /q "%TARGET_FOLDER%" >> "%LOG_FILE%" 2>&1
-
-exit /b 0
-
-REM ============================================================================
-:RemoveTargetedRegistryKeys
-REM ============================================================================
-call :Log "Removing targeted machine-wide BlueZone/ADP registry keys."
-
-REM Thorough/full-user mode does not delete HKCU keys for the admin account.
-reg delete "HKLM\SOFTWARE\Wow6432Node\BlueZone" /f >> "%LOG_FILE%" 2>&1
-reg delete "HKLM\SOFTWARE\Wow6432Node\SEAGULL\BlueZone" /f >> "%LOG_FILE%" 2>&1
-reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "ADPInit" /f >> "%LOG_FILE%" 2>&1
-
-for %%K in (
-    "HKLM\SOFTWARE\Classes\fileBBH"
-    "HKLM\SOFTWARE\Classes\fileBBS"
-    "HKLM\SOFTWARE\Classes\fileBZT"
-    "HKLM\SOFTWARE\Classes\fileZLT"
-    "HKLM\SOFTWARE\Classes\fileZVT"
-    "HKLM\SOFTWARE\Classes\BlueZone.FTP.1"
-    "HKLM\SOFTWARE\Classes\BlueZone.iSeriesDisplay.1"
-    "HKLM\SOFTWARE\Classes\BlueZone.iSeriesPrinter.1"
-    "HKLM\SOFTWARE\Classes\BlueZone.MainframeDisplay.1"
-    "HKLM\SOFTWARE\Classes\BlueZone.MainframePrinter.1"
-    "HKLM\SOFTWARE\Classes\BlueZone.SessionManagerLayout.1"
-    "HKLM\SOFTWARE\Classes\BlueZone.TCP/IPPrintServer.1"
-    "HKLM\SOFTWARE\Classes\BlueZone.VTDisplay.1"
-    "HKLM\SOFTWARE\Classes\Bzvba.Vbahost"
-    "HKLM\SOFTWARE\Classes\Bzvba.Vbahost.1"
-    "HKLM\SOFTWARE\Classes\Bzvba.Vbahost.6.2"
-) do (
-    reg delete %%~K /f >> "%LOG_FILE%" 2>&1
-)
-
-REM Do not manually delete generic MSI Products/Components/UserData records.
-for %%K in (
-    "HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\BlueZone VBA 6.2"
-    "HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{90F60409-6000-11D3-8CFE-0150048383C9}"
-    "HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{90F50409-6000-11D3-8CFE-0150048383C9}"
-    "HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{359846D6-19CE-480E-9FDF-02359052CEA4}"
-    "HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{374C88B2-C3F7-4C33-841E-5AD4627ECF9F}"
-) do (
-    reg delete %%~K /f >> "%LOG_FILE%" 2>&1
-)
-
-exit /b 0
-
-REM ============================================================================
-:UnregisterLegacyOcx
-REM ============================================================================
-set "OCX_FILE=C:\Windows\Downloaded Program Files\sglw2hcm.ocx"
-
-if exist "%OCX_FILE%" (
-    call :Log "Unregistering legacy OCX: %OCX_FILE%"
-    regsvr32.exe /u /s "%OCX_FILE%" >> "%LOG_FILE%" 2>&1
-    move /y "%OCX_FILE%" "%TEMP%\sglw2hcm_%STAMP%.ocx" >> "%LOG_FILE%" 2>&1
-) else (
-    call :Log "Legacy OCX not present."
-)
-
-exit /b 0
-
-REM ============================================================================
-:RequireAdmin
-REM ============================================================================
-net session >nul 2>&1
-if errorlevel 1 exit /b 1
-exit /b 0
-
-REM ============================================================================
-:WriteEvent
-REM ============================================================================
-REM Event Viewer:
-REM Windows Logs > Application
-REM Event source: CDKBlueZoneReset
-
-set "EVENT_TYPE=%~1"
-set "EVENT_ID=%~2"
-set "EVENT_MESSAGE=%~3"
-
-eventcreate.exe ^
-    /l "%EVENT_LOG%" ^
-    /so "%EVENT_SOURCE%" ^
-    /t "%EVENT_TYPE%" ^
-    /id %EVENT_ID% ^
-    /d "%EVENT_MESSAGE%" >> "%LOG_FILE%" 2>&1
-
-exit /b 0
-
-REM ============================================================================
-:Log
-REM ============================================================================
->> "%LOG_FILE%" echo [%DATE% %TIME%] %~1
-exit /b 0
-
-REM ============================================================================
-:Usage
-REM ============================================================================
-echo.
-echo ==========================================================================
-echo CDK Drive / BlueZone Reset and Removal Tool - Help
-echo ==========================================================================
-echo.
-echo SYNTAX
-echo   %SCRIPT_NAME% [basic ^| thorough ^| full-user] [target options]
-echo.
-echo MODES
-echo   basic
-echo       Resets user profile data only.
-echo.
-echo   thorough
-echo       Administrator-only machine-wide BlueZone/CDK removal.
-echo       It does not touch user profile data.
-echo.
-echo   full-user
-echo       Administrator-only profile cleanup plus machine-wide removal.
-echo.
-echo TARGET OPTIONS
-echo   No target option
-echo       Targets only the profile of the account running this script.
-echo.
-echo   --profile-path "C:\Users\ProfileName"
-echo       Targets an existing profile by exact local profile path.
-echo.
-echo   --sid "S-1-..."
-echo       Targets an existing profile by Windows SID.
-echo.
-echo   --users "identity"
-echo       Best-effort identity lookup. If it cannot identify one unique local
-echo       profile, use --sid, --profile-path, or --all-users.
-echo.
-echo   --all-users
-echo       Targets every existing non-special local Windows profile.
-echo.
-echo EXAMPLES
-echo   %SCRIPT_NAME% basic
-echo   %SCRIPT_NAME% basic --profile-path "C:\Users\janes"
-echo   %SCRIPT_NAME% basic --sid "S-1-12-1-123456789-123456789-123456789-123456789"
-echo   %SCRIPT_NAME% basic --users "jane.smith@contoso.com"
-echo   %SCRIPT_NAME% basic --all-users
-echo   %SCRIPT_NAME% full-user --all-users
-echo   %SCRIPT_NAME% thorough
-echo.
-echo REQUIREMENTS AND WARNINGS
-echo   - Targeting other users or all users requires Administrator privileges.
-echo   - Quote profile paths and identities that contain spaces.
-echo   - --all-users can affect every normal user profile on the device.
-echo   - CDK/BlueZone/Edge processes are force-closed; unsaved work can be lost.
-echo   - Detailed logs and Event Viewer summary records are created.
-echo.
-exit /b 0
-
-REM ============================================================================
-:Quit
-REM ============================================================================
-echo.
-echo No action was taken.
-exit /b 0
-
-REM ============================================================================
-:EndInteractive
-REM ============================================================================
-REM Do not pause during scripted deployment.
-if not "%~1"=="" exit /b 0
-
-echo.
-pause
-exit /b 0
+
+    try {
+        & eventcreate.exe `
+            /l $script:EventLogName `
+            /so $script:ToolName `
+            /t $EntryType.ToUpperInvariant() `
+            /id $EventId `
+            /d $Message 2>&1 | Out-Null
+    }
+    catch {
+        Write-ToolLog "Unable to create Application Event Log entry $EventId. $($_.Exception.Message)"
+    }
+}
+
+function Add-ToolWarning {
+    param(
+        [Parameter(Mandatory)][string]$Message,
+        [int]$EventId = 4102
+    )
+
+    $script:HadWarnings = $true
+    Write-ToolLog "WARNING: $Message"
+    Write-ToolEvent -EntryType Warning -EventId $EventId -Message $Message
+}
+
+function Test-Administrator {
+    return $script:IsAdministrator
+}
+
+function Require-Administrator {
+    param([Parameter(Mandatory)][string]$Operation)
+
+    if (Test-Administrator) {
+        return $true
+    }
+
+    $message = "$Operation requires Administrator privileges."
+    Write-ToolLog "ERROR: $message"
+    Write-ToolEvent -EntryType Warning -EventId 4002 -Message $message
+
+    Write-Host ''
+    Write-Host "ERROR: $message" -ForegroundColor Red
+    Write-Host 'Start PowerShell with Run as administrator and try again.'
+    Write-Host ''
+    return $false
+}
+
+function Show-ToolHelp {
+@'
+CDK Drive / BlueZone Reset and Removal Tool
+
+SYNTAX
+  .\CDK-BlueZone-Reset.ps1 [-Mode Basic|Thorough|FullUser] [target options]
+  .\CDK-BlueZone-Reset.ps1 -Help
+
+MODES
+  Basic
+      Resets selected user-profile cache/configuration data. It does not
+      uninstall CDK Drive, BlueZone, or ADP components.
+
+  Thorough
+      Requires Administrator privileges. Performs machine-wide removal only.
+      It does not clean user profiles.
+
+  FullUser
+      Requires Administrator privileges. Cleans selected user profile(s), then
+      runs Thorough machine-wide removal.
+
+TARGET OPTIONS
+  No targeting option
+      Selects the current process account's Windows profile.
+
+  -ProfilePath 'C:\Users\ProfileName'
+      Selects an existing Windows profile by exact local profile path.
+      Multiple values are supported.
+
+  -Sid 'S-1-...'
+      Selects existing Windows profile(s) by SID.
+      Multiple values are supported.
+
+  -User 'identity'
+      Best-effort local profile-folder matching. Examples:
+        user@company.com
+        AzureAD\user@company.com
+        DOMAIN\username
+        COMPUTER\localuser
+      For unattended remediation, -Sid or -ProfilePath is preferred.
+
+  -AllUsers
+      Selects every existing non-special Windows user profile. This excludes
+      Windows-managed special profiles such as Default, Public, SYSTEM,
+      Local Service, and Network Service.
+
+EXAMPLES
+  .\CDK-BlueZone-Reset.ps1
+  .\CDK-BlueZone-Reset.ps1 -Mode Basic
+  .\CDK-BlueZone-Reset.ps1 -Mode Basic -AllUsers
+  .\CDK-BlueZone-Reset.ps1 -Mode Basic -ProfilePath 'C:\Users\janes'
+  .\CDK-BlueZone-Reset.ps1 -Mode Basic -Sid 'S-1-12-1-...'
+  .\CDK-BlueZone-Reset.ps1 -Mode Thorough
+  .\CDK-BlueZone-Reset.ps1 -Mode FullUser -AllUsers
+
+SAFETY NOTES
+  - CDK Drive, BlueZone, Edge, and related processes are force-closed.
+    Unsaved work can be lost.
+  - Basic mode backs up BlueZone profile folders before removing active copies.
+  - Edge cleanup removes cache-oriented data only, not full Edge profiles,
+    saved passwords, favorites, extensions, or browser settings.
+  - Targeting a non-current account or using -AllUsers requires elevation.
+  - Detailed logs are written to ProgramData when elevated, otherwise the
+    current user's LocalAppData.
+  - Summary events are written to Event Viewer > Windows Logs > Application
+    under source: CDKBlueZoneReset.
+'@ | Write-Host
+}
+
+function Stop-RelatedProcesses {
+    Write-ToolLog 'Stopping CDK Drive, BlueZone, Internet Explorer, Edge, and WebView processes.'
+
+    foreach ($processName in @(
+        'wsstart', 'wsstart_2', 'wsstart_4', 'BZVT', 'BZVBA', 'dfsvc',
+        'sw9c', 'legaclt', 'iexplore', 'msedge', 'msedgewebview2'
+    )) {
+        try {
+            Get-Process -Name $processName -ErrorAction SilentlyContinue |
+                Stop-Process -Force -ErrorAction SilentlyContinue
+        }
+        catch {
+            Write-ToolLog "Could not stop process '$processName'. $($_.Exception.Message)"
+        }
+    }
+}
+
+function Clear-LegacyInternetExplorerData {
+    Write-ToolLog 'Clearing legacy Internet Explorer / Internet Options data for the current process account.'
+
+    try {
+        Start-Process `
+            -FilePath 'RunDll32.exe' `
+            -ArgumentList 'InetCpl.cpl,ClearMyTracksByProcess 255' `
+            -Wait `
+            -NoNewWindow `
+            -ErrorAction Stop
+    }
+    catch {
+        Add-ToolWarning "Could not clear legacy Internet Explorer data. $($_.Exception.Message)"
+    }
+}
+
+function Get-NormalWindowsProfiles {
+    try {
+        return @(
+            Get-CimInstance -ClassName Win32_UserProfile -ErrorAction Stop |
+                Where-Object {
+                    -not $_.Special -and
+                    $_.SID -and
+                    $_.LocalPath -and
+                    (Test-Path -LiteralPath $_.LocalPath)
+                }
+        )
+    }
+    catch {
+        Add-ToolWarning "Unable to query Win32_UserProfile. $($_.Exception.Message)"
+        return @()
+    }
+}
+
+function Resolve-TargetProfiles {
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Current', 'ProfilePath', 'Sid', 'User', 'AllUsers')]
+        [string]$SelectionType,
+
+        [string[]]$SelectionValues
+    )
+
+    $normalProfiles = @(Get-NormalWindowsProfiles)
+
+    if ($normalProfiles.Count -eq 0) {
+        Add-ToolWarning 'No normal local Windows profiles were found.'
+        return @()
+    }
+
+    switch ($SelectionType) {
+        'Current' {
+            $currentProfile = $normalProfiles |
+                Where-Object { $_.SID -eq $script:CurrentSid } |
+                Select-Object -First 1
+
+            if ($null -eq $currentProfile) {
+                Add-ToolWarning ('Could not resolve current process account profile. SID: {0}' -f $script:CurrentSid)
+                return @()
+            }
+
+            return @($currentProfile)
+        }
+
+        'AllUsers' {
+            return $normalProfiles
+        }
+
+        'ProfilePath' {
+            $matchedProfiles = @()
+
+            foreach ($targetPath in $SelectionValues) {
+                $expandedPath = [Environment]::ExpandEnvironmentVariables($targetPath)
+
+                $match = $normalProfiles | Where-Object {
+                    $_.LocalPath.TrimEnd('\') -ieq $expandedPath.TrimEnd('\')
+                }
+
+                if ($null -eq $match) {
+                    Add-ToolWarning ('No normal Windows profile matched requested path: {0}' -f $targetPath)
+                }
+                else {
+                    $matchedProfiles += $match
+                }
+            }
+
+            return @($matchedProfiles | Sort-Object SID -Unique)
+        }
+
+        'Sid' {
+            $matchedProfiles = @()
+
+            foreach ($targetSid in $SelectionValues) {
+                $match = $normalProfiles | Where-Object { $_.SID -eq $targetSid }
+
+                if ($null -eq $match) {
+                    Add-ToolWarning ('No normal Windows profile matched requested SID: {0}' -f $targetSid)
+                }
+                else {
+                    $matchedProfiles += $match
+                }
+            }
+
+            return @($matchedProfiles | Sort-Object SID -Unique)
+        }
+
+        'User' {
+            $matchedProfiles = @()
+
+            foreach ($requestedIdentity in $SelectionValues) {
+                $normalizedIdentity = $requestedIdentity.Trim()
+                $leafIdentity = ($normalizedIdentity -split '\\')[-1]
+
+                $match = $normalProfiles | Where-Object {
+                    $profileLeaf = Split-Path -Path $_.LocalPath -Leaf
+                    $profileLeaf -ieq $normalizedIdentity -or
+                    $profileLeaf -ieq $leafIdentity
+                }
+
+                if (@($match).Count -eq 1) {
+                    $matchedProfiles += $match
+                }
+                elseif (@($match).Count -gt 1) {
+                    Add-ToolWarning "Identity '$requestedIdentity' matched multiple local profiles. Use -Sid or -ProfilePath instead."
+                }
+                else {
+                    Add-ToolWarning "Could not map identity '$requestedIdentity' to a unique local profile. Use -Sid, -ProfilePath, or -AllUsers."
+                }
+            }
+
+            return @($matchedProfiles | Sort-Object SID -Unique)
+        }
+    }
+}
+
+function Remove-FolderIfPresent {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    Write-ToolLog "Removing: $Path"
+
+    try {
+        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+    }
+    catch {
+        Add-ToolWarning "Could not fully remove '$Path'. $($_.Exception.Message)"
+    }
+}
+
+function Backup-And-RemoveFolder {
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination
+    )
+
+    if (-not (Test-Path -LiteralPath $Source)) {
+        return
+    }
+
+    Write-ToolLog "Backing up: $Source -> $Destination"
+
+    try {
+        New-Item -ItemType Directory -Path $Destination -Force -ErrorAction Stop | Out-Null
+    }
+    catch {
+        Add-ToolWarning "Could not create backup folder '$Destination'. $($_.Exception.Message)"
+        return
+    }
+
+    & robocopy.exe `
+        $Source `
+        $Destination `
+        /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /XJ /NFL /NDL /NJH /NJS | Out-Null
+
+    $robocopyExitCode = $LASTEXITCODE
+
+    if ($robocopyExitCode -ge 8) {
+        Add-ToolWarning "BlueZone backup failed for '$Source'. Robocopy exit code: $robocopyExitCode. Source was retained."
+        return
+    }
+
+    Remove-FolderIfPresent -Path $Source
+}
+
+function Clear-EdgeCacheData {
+    param([Parameter(Mandatory)][string]$LocalAppData)
+
+    $edgeRoot = Join-Path $LocalAppData 'Microsoft\Edge\User Data'
+
+    if (-not (Test-Path -LiteralPath $edgeRoot)) {
+        Write-ToolLog "Edge user-data folder not found: $edgeRoot"
+        return
+    }
+
+    Write-ToolLog "Clearing Edge cache folders under: $edgeRoot"
+
+    foreach ($relativePath in @(
+        'ShaderCache', 'GrShaderCache', 'GraphiteCache', 'DawnCache',
+        'Crashpad\reports'
+    )) {
+        Remove-FolderIfPresent -Path (Join-Path $edgeRoot $relativePath)
+    }
+
+    $edgeProfiles = @()
+
+    foreach ($profileName in @('Default', 'Guest Profile', 'System Profile')) {
+        $candidatePath = Join-Path $edgeRoot $profileName
+        if (Test-Path -LiteralPath $candidatePath) {
+            $edgeProfiles += Get-Item -LiteralPath $candidatePath
+        }
+    }
+
+    $edgeProfiles += Get-ChildItem `
+        -LiteralPath $edgeRoot `
+        -Directory `
+        -Filter 'Profile *' `
+        -ErrorAction SilentlyContinue
+
+    foreach ($edgeProfile in ($edgeProfiles | Sort-Object FullName -Unique)) {
+        foreach ($relativePath in @(
+            'Cache',
+            'Code Cache',
+            'GPUCache',
+            'DawnCache',
+            'Network\Cache',
+            'Service Worker\CacheStorage',
+            'Service Worker\ScriptCache'
+        )) {
+            Remove-FolderIfPresent -Path (Join-Path $edgeProfile.FullName $relativePath)
+        }
+    }
+}
+
+function Invoke-ProfileCleanup {
+    param([Parameter(Mandatory)][object[]]$Profiles)
+
+    if ($Profiles.Count -eq 0) {
+        Add-ToolWarning 'No eligible user profiles were selected for cleanup.'
+        return 1
+    }
+
+    Write-ToolLog "Eligible profile count: $($Profiles.Count)"
+
+    foreach ($profile in $Profiles) {
+        $profilePath = $profile.LocalPath
+        $profileFolderName = Split-Path -Path $profilePath -Leaf
+        $localAppData = Join-Path $profilePath 'AppData\Local'
+        $roamingAppData = Join-Path $profilePath 'AppData\Roaming'
+        $documentsPath = Join-Path $profilePath 'Documents'
+        $backupPath = Join-Path (Join-Path $script:BackupRoot $profileFolderName) $script:Timestamp
+
+        $startMessage = "CDK/BlueZone profile cleanup started. Profile: '$profilePath'; SID: '$($profile.SID)'; Loaded: '$($profile.Loaded)'."
+        Write-ToolLog $startMessage
+        Write-ToolEvent -EntryType Information -EventId 4100 -Message $startMessage
+
+        Clear-EdgeCacheData -LocalAppData $localAppData
+        Remove-FolderIfPresent -Path (Join-Path $localAppData 'Apps\2.0')
+        Remove-FolderIfPresent -Path (Join-Path $localAppData 'assembly\dl3')
+        Remove-FolderIfPresent -Path (Join-Path $roamingAppData 'ADP')
+
+        Backup-And-RemoveFolder `
+            -Source (Join-Path $roamingAppData 'BlueZone') `
+            -Destination (Join-Path $backupPath 'Roaming_BlueZone')
+
+        Backup-And-RemoveFolder `
+            -Source (Join-Path $roamingAppData 'BlueZone Web') `
+            -Destination (Join-Path $backupPath 'Roaming_BlueZone_Web')
+
+        Backup-And-RemoveFolder `
+            -Source (Join-Path $documentsPath 'BlueZone') `
+            -Destination (Join-Path $backupPath 'Documents_BlueZone')
+
+        $completionMessage = "CDK/BlueZone profile cleanup completed. Profile: '$profilePath'; SID: '$($profile.SID)'."
+        Write-ToolLog $completionMessage
+        Write-ToolEvent -EntryType Information -EventId 4101 -Message $completionMessage
+    }
+
+    if ($script:HadWarnings) {
+        return 1
+    }
+
+    return 0
+}
+
+function Invoke-MsiUninstall {
+    param(
+        [Parameter(Mandatory)][string]$ProductCode,
+        [Parameter(Mandatory)][string]$ProductName
+    )
+
+    Write-ToolLog "MSI uninstall attempt: $ProductName [$ProductCode]"
+
+    try {
+        $process = Start-Process `
+            -FilePath 'msiexec.exe' `
+            -ArgumentList "/x $ProductCode /qn /norestart" `
+            -Wait `
+            -PassThru `
+            -NoNewWindow `
+            -ErrorAction Stop
+
+        $exitCode = $process.ExitCode
+    }
+    catch {
+        $exitCode = -1
+        Add-ToolWarning "Could not start MSI uninstall for '$ProductName'. $($_.Exception.Message)" 2100
+    }
+
+    Write-ToolLog ('MSI exit code for {0}: {1}' -f $ProductName, $exitCode)
+
+    if ($exitCode -notin @(0, 1605, 3010)) {
+        Add-ToolWarning "MSI uninstall returned exit code $exitCode for '$ProductName' [$ProductCode]. Review log: $script:LogFile" 2100
+    }
+
+    return $exitCode
+}
+
+function Invoke-KnownProductUninstalls {
+    Write-ToolLog 'Attempting silent uninstall of known BlueZone, ADP, and CDK components.'
+
+    $products = @(
+        @{ Code = '{374C62B2-C3F7-4C33-841E-5AD4627ECF9F}'; Name = 'BlueZone VBA 6.2' },
+        @{ Code = '{90F50409-6000-11D3-8CFE-0150048383C9}'; Name = 'BlueZone VBA component' },
+        @{ Code = '{90F60409-6000-11D3-8CFE-0150048383C9}'; Name = 'BlueZone VBA component' },
+        @{ Code = '{38A229CB-4547-478F-B2C4-FB0D336813FD}'; Name = 'SGLW2HCM component' },
+        @{ Code = '{359846D6-19CE-480E-9FDF-02359052CEA4}'; Name = 'BlueZone patch' },
+        @{ Code = '{E495B22B-232B-4094-90B3-0FD4BC4B7B64}'; Name = 'BlueZone patch' },
+        @{ Code = '{49D3D8A3-F983-40B1-B668-2B7B2C4B2154}'; Name = 'BlueZone 6.2' },
+        @{ Code = '{383D7832-FC67-4BFA-816E-88B80A0D95ED}'; Name = 'BlueZone VBA 6.1' },
+        @{ Code = '{374C61B2-C3F7-4C33-841E-5AD4627ECF9F}'; Name = 'BlueZone VBA 6.1' },
+        @{ Code = '{498CDC54-B572-4B23-8E65-2C95DA2F0D08}'; Name = 'BlueZone 6.1' },
+        @{ Code = '{5C6ADDC7-067C-4236-B788-2B3F4B6F47A4}'; Name = 'BlueZone Rebrander' },
+        @{ Code = '{69EF9BED-A297-4204-90F0-F1CC803AC4FA}'; Name = 'BlueZone VBA 952' },
+        @{ Code = '{374C88B2-C3F7-4C33-841E-5AD4627ECF9F}'; Name = 'BlueZone 4.1' },
+        @{ Code = '{5DCA09DF-B911-48BB-82B7-89A35A0F49B7}'; Name = 'BlueZone 4.1 update' },
+        @{ Code = '{BB3B5869-A650-425E-9985-76CA48A8DDAF}'; Name = 'ADPInit' },
+        @{ Code = '{40FDC133-63DC-4B03-B74B-7573CEB2EA9F}'; Name = 'CDKInit' }
+    )
+
+    foreach ($product in $products) {
+        Invoke-MsiUninstall -ProductCode $product.Code -ProductName $product.Name | Out-Null
+    }
+
+    $vbaUninstaller = 'C:\Program Files (x86)\BlueZone VBA\6.2\BzvbaI.exe'
+
+    if (Test-Path -LiteralPath $vbaUninstaller) {
+        Write-ToolLog "Running BlueZone VBA executable uninstaller: $vbaUninstaller"
+
+        try {
+            $process = Start-Process `
+                -FilePath $vbaUninstaller `
+                -ArgumentList '/u' `
+                -Wait `
+                -PassThru `
+                -NoNewWindow `
+                -ErrorAction Stop
+
+            Write-ToolLog "BlueZone VBA executable uninstaller exit code: $($process.ExitCode)"
+        }
+        catch {
+            Add-ToolWarning "Could not run BlueZone VBA executable uninstaller. $($_.Exception.Message)"
+        }
+    }
+}
+
+function Remove-ProtectedFolder {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-ToolLog "Folder was not found: $Path"
+        return
+    }
+
+    Write-ToolLog "Removing folder: $Path"
+
+    try {
+        & takeown.exe /f $Path /r /d y 2>&1 | Out-Null
+        & icacls.exe $Path /grant 'Administrators:(OI)(CI)F' /t /c 2>&1 | Out-Null
+        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+    }
+    catch {
+        Add-ToolWarning "Could not fully remove protected folder '$Path'. $($_.Exception.Message)"
+    }
+}
+
+function Remove-MachineCacheData {
+    Write-ToolLog 'Removing machine-wide ADP and CDK Drive cache folders.'
+
+    foreach ($path in @(
+        'C:\ProgramData\ADP\websuite',
+        'C:\ProgramData\CDK\Drive'
+    )) {
+        Remove-FolderIfPresent -Path $path
+    }
+}
+
+function Remove-ResidualProgramFolders {
+    Write-ToolLog 'Removing residual BlueZone, ADP, and CDK program folders.'
+
+    foreach ($path in @(
+        'C:\Program Files (x86)\ADP\websuite TE',
+        'C:\Program Files (x86)\BlueZone',
+        'C:\Program Files (x86)\BlueZone VBA',
+        'C:\Windows\Downloaded Program Files\6.2',
+        'C:\ProgramData\BlueZone',
+        'C:\Users\Default\Documents\BlueZone',
+        'C:\Users\Public\Documents\BlueZone'
+    )) {
+        Remove-ProtectedFolder -Path $path
+    }
+}
+
+function Remove-RegistryKeyIfPresent {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (Test-Path -LiteralPath $Path) {
+        Write-ToolLog "Removing registry key: $Path"
+
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Add-ToolWarning "Could not remove registry key '$Path'. $($_.Exception.Message)"
+        }
+    }
+}
+
+function Remove-RegistryValueIfPresent {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    try {
+        $property = Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction SilentlyContinue
+
+        if ($null -ne $property) {
+            Write-ToolLog "Removing registry value: $Path\$Name"
+            Remove-ItemProperty -LiteralPath $Path -Name $Name -Force -ErrorAction Stop
+        }
+    }
+    catch {
+        Write-ToolLog "Registry value was not removed: $Path\$Name. $($_.Exception.Message)"
+    }
+}
+
+function Remove-TargetedRegistryEntries {
+    Write-ToolLog 'Removing targeted BlueZone and ADP machine-wide registry entries.'
+
+    Remove-RegistryKeyIfPresent -Path 'HKLM:\SOFTWARE\Wow6432Node\BlueZone'
+    Remove-RegistryKeyIfPresent -Path 'HKLM:\SOFTWARE\Wow6432Node\SEAGULL\BlueZone'
+
+    Remove-RegistryValueIfPresent `
+        -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' `
+        -Name 'ADPInit'
+
+    foreach ($registryPath in @(
+        'HKLM:\SOFTWARE\Classes\fileBBH',
+        'HKLM:\SOFTWARE\Classes\fileBBS',
+        'HKLM:\SOFTWARE\Classes\fileBZT',
+        'HKLM:\SOFTWARE\Classes\fileZLT',
+        'HKLM:\SOFTWARE\Classes\fileZVT',
+        'HKLM:\SOFTWARE\Classes\BlueZone.FTP.1',
+        'HKLM:\SOFTWARE\Classes\BlueZone.iSeriesDisplay.1',
+        'HKLM:\SOFTWARE\Classes\BlueZone.iSeriesPrinter.1',
+        'HKLM:\SOFTWARE\Classes\BlueZone.MainframeDisplay.1',
+        'HKLM:\SOFTWARE\Classes\BlueZone.MainframePrinter.1',
+        'HKLM:\SOFTWARE\Classes\BlueZone.SessionManagerLayout.1',
+        'HKLM:\SOFTWARE\Classes\BlueZone.TCP/IPPrintServer.1',
+        'HKLM:\SOFTWARE\Classes\BlueZone.VTDisplay.1',
+        'HKLM:\SOFTWARE\Classes\Bzvba.Vbahost',
+        'HKLM:\SOFTWARE\Classes\Bzvba.Vbahost.1',
+        'HKLM:\SOFTWARE\Classes\Bzvba.Vbahost.6.2'
+    )) {
+        Remove-RegistryKeyIfPresent -Path $registryPath
+    }
+
+    foreach ($registryPath in @(
+        'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\BlueZone VBA 6.2',
+        'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{90F60409-6000-11D3-8CFE-0150048383C9}',
+        'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{90F50409-6000-11D3-8CFE-0150048383C9}',
+        'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{359846D6-19CE-480E-9FDF-02359052CEA4}',
+        'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{374C88B2-C3F7-4C33-841E-5AD4627ECF9F}'
+    )) {
+        Remove-RegistryKeyIfPresent -Path $registryPath
+    }
+}
+
+function Unregister-LegacyOcx {
+    $ocxFile = 'C:\Windows\Downloaded Program Files\sglw2hcm.ocx'
+
+    if (-not (Test-Path -LiteralPath $ocxFile)) {
+        Write-ToolLog 'Legacy sglw2hcm.ocx file was not found.'
+        return
+    }
+
+    Write-ToolLog "Unregistering legacy OCX file: $ocxFile"
+
+    try {
+        Start-Process `
+            -FilePath 'regsvr32.exe' `
+            -ArgumentList "/u /s `"$ocxFile`"" `
+            -Wait `
+            -NoNewWindow `
+            -ErrorAction Stop
+
+        $destination = Join-Path $env:TEMP ('sglw2hcm_{0}.ocx' -f $script:Timestamp)
+        Move-Item -LiteralPath $ocxFile -Destination $destination -Force -ErrorAction Stop
+    }
+    catch {
+        Add-ToolWarning "Could not unregister or move '$ocxFile'. $($_.Exception.Message)"
+    }
+}
+
+function Invoke-ThoroughMachineCleanup {
+    if (-not (Require-Administrator -Operation 'Thorough machine cleanup')) {
+        return 5
+    }
+
+    Write-ToolLog '===== THOROUGH MACHINE CLEANUP STARTED ====='
+    Write-ToolEvent `
+        -EntryType Information `
+        -EventId 2000 `
+        -Message "Thorough CDK/BlueZone machine cleanup started by $script:CurrentAccount."
+
+    Stop-RelatedProcesses
+    Remove-MachineCacheData
+    Invoke-KnownProductUninstalls
+    Remove-ResidualProgramFolders
+    Remove-TargetedRegistryEntries
+    Unregister-LegacyOcx
+
+    Write-ToolLog '===== THOROUGH MACHINE CLEANUP COMPLETED ====='
+    Write-ToolEvent `
+        -EntryType Information `
+        -EventId 2001 `
+        -Message "Thorough CDK/BlueZone machine cleanup completed. No user profile cleanup was performed. Log: $script:LogFile"
+
+    return 0
+}
+
+function Get-InteractiveMode {
+    Clear-Host
+
+    Write-Host ''
+    Write-Host '=================================================================='
+    Write-Host '                   CDK Drive / BlueZone Reset Tool'
+    Write-Host '=================================================================='
+    Write-Host ''
+
+    Write-Host '[1] Basic profile reset' -ForegroundColor Cyan
+    Write-Host '    Reset cache and configuration data for the current account.'
+    Write-Host '    Does not uninstall CDK Drive, BlueZone, or ADP components.'
+    Write-Host ''
+
+    Write-Host '[2] Thorough machine cleanup' -ForegroundColor Yellow
+    Write-Host '    Requires Administrator privileges.'
+    Write-Host '    Removes machine-wide CDK/BlueZone/ADP components, cache data,'
+    Write-Host '    residual folders, and selected registry entries.'
+    Write-Host '    Does not alter any user profile.'
+    Write-Host ''
+
+    Write-Host '[3] Full user and machine cleanup' -ForegroundColor Magenta
+    Write-Host '    Requires Administrator privileges.'
+    Write-Host '    Resets the current account profile, then runs machine cleanup.'
+    Write-Host '    Use only when the current account is the profile to be reset.'
+    Write-Host ''
+
+    Write-Host '[Q] Quit' -ForegroundColor DarkGray
+    Write-Host '    Exit without making any changes.'
+    Write-Host ''
+
+    do {
+        $selection = (Read-Host 'Select an option').Trim().ToUpperInvariant()
+    } until ($selection -in @('1', '2', '3', 'Q'))
+
+    switch ($selection) {
+        '1' { return 'Basic' }
+        '2' { return 'Thorough' }
+        '3' { return 'FullUser' }
+        'Q' { return 'Quit' }
+    }
+}
+
+function Get-ProfileSelection {
+    if ($AllUsers) {
+        return @{ Type = 'AllUsers'; Values = @() }
+    }
+
+    if ($ProfilePath) {
+        return @{ Type = 'ProfilePath'; Values = $ProfilePath }
+    }
+
+    if ($Sid) {
+        return @{ Type = 'Sid'; Values = $Sid }
+    }
+
+    if ($User) {
+        return @{ Type = 'User'; Values = $User }
+    }
+
+    return @{ Type = 'Current'; Values = @() }
+}
+
+# ============================================================================
+# Main execution
+# ============================================================================
+
+if ($Help -or $Mode -eq 'Help') {
+    Show-ToolHelp
+    exit 0
+}
+
+if (-not $Mode) {
+    $interactiveSelection = Get-InteractiveMode
+
+    if ($interactiveSelection -eq 'Quit') {
+        Write-Host ''
+        Write-Host 'No action was taken.'
+        exit 0
+    }
+
+    $Mode = $interactiveSelection
+}
+
+$profileSelection = Get-ProfileSelection
+$selectionType = $profileSelection.Type
+$selectionValues = $profileSelection.Values
+$nonCurrentTargeting = $selectionType -ne 'Current'
+
+if ($Mode -eq 'Thorough' -and $nonCurrentTargeting) {
+    Write-ToolLog "Target options were ignored because Thorough mode is machine-wide only. Target type received: $selectionType"
+    Write-Host ''
+    Write-Host 'Note: Target-user options are ignored in Thorough mode.' -ForegroundColor Yellow
+    Write-Host 'Thorough mode performs machine-wide cleanup only.'
+    Write-Host ''
+}
+
+if ($nonCurrentTargeting -and $Mode -ne 'Thorough') {
+    if (-not (Require-Administrator -Operation 'Targeted user-profile cleanup')) {
+        exit 5
+    }
+}
+
+switch ($Mode) {
+    'Basic' {
+        Write-ToolLog '===== BASIC PROFILE RESET STARTED ====='
+        Write-ToolLog "Process account: $script:CurrentAccount"
+        Write-ToolLog "Target selection: $selectionType"
+        Write-ToolEvent `
+            -EntryType Information `
+            -EventId 1000 `
+            -Message "Basic CDK/BlueZone profile reset started. Process account: $script:CurrentAccount. Target mode: $selectionType."
+
+        Stop-RelatedProcesses
+
+        if ($selectionType -eq 'Current') {
+            Clear-LegacyInternetExplorerData
+        }
+        else {
+            Write-ToolLog 'Legacy IE cleanup skipped because targeted profile cleanup cannot safely target another user IE profile.'
+        }
+
+        $profiles = Resolve-TargetProfiles -SelectionType $selectionType -SelectionValues $selectionValues
+        $result = Invoke-ProfileCleanup -Profiles $profiles
+
+        if ($result -ne 0) {
+            Write-ToolEvent `
+                -EntryType Warning `
+                -EventId 1002 `
+                -Message "Basic CDK/BlueZone profile reset completed with warnings. Log: $script:LogFile"
+        }
+        else {
+            Write-ToolLog '===== BASIC PROFILE RESET COMPLETED ====='
+            Write-ToolEvent `
+                -EntryType Information `
+                -EventId 1001 `
+                -Message "Basic CDK/BlueZone profile reset completed. Target mode: $selectionType. Log: $script:LogFile"
+        }
+
+        Write-Host ''
+        Write-Host 'Basic profile reset finished.' -ForegroundColor Green
+        Write-Host "Log file: $script:LogFile"
+        exit $result
+    }
+
+    'Thorough' {
+        $result = Invoke-ThoroughMachineCleanup
+
+        if ($result -eq 0) {
+            Write-Host ''
+            Write-Host 'Thorough machine cleanup finished.' -ForegroundColor Green
+            Write-Host 'No per-user profiles were changed by this mode.'
+            Write-Host "Log file: $script:LogFile"
+        }
+
+        exit $result
+    }
+
+    'FullUser' {
+        if (-not (Require-Administrator -Operation 'Full user and machine cleanup')) {
+            exit 5
+        }
+
+        Write-ToolLog '===== FULL USER + MACHINE CLEANUP STARTED ====='
+        Write-ToolLog "Process account: $script:CurrentAccount"
+        Write-ToolLog "Target selection: $selectionType"
+        Write-ToolEvent `
+            -EntryType Information `
+            -EventId 3000 `
+            -Message "Full user and machine CDK/BlueZone cleanup started. Process account: $script:CurrentAccount. Target mode: $selectionType."
+
+        Stop-RelatedProcesses
+
+        if ($selectionType -eq 'Current') {
+            Clear-LegacyInternetExplorerData
+        }
+        else {
+            Write-ToolLog 'Legacy IE cleanup skipped because targeted profile cleanup cannot safely target another user IE profile.'
+        }
+
+        $profiles = Resolve-TargetProfiles -SelectionType $selectionType -SelectionValues $selectionValues
+        $profileResult = Invoke-ProfileCleanup -Profiles $profiles
+        $machineResult = Invoke-ThoroughMachineCleanup
+
+        if ($profileResult -ne 0 -or $machineResult -ne 0) {
+            Write-ToolEvent `
+                -EntryType Warning `
+                -EventId 3003 `
+                -Message "Full user and machine CDK/BlueZone cleanup completed with warnings. Log: $script:LogFile"
+
+            $finalResult = 1
+        }
+        else {
+            Write-ToolLog '===== FULL USER + MACHINE CLEANUP COMPLETED ====='
+            Write-ToolEvent `
+                -EntryType Information `
+                -EventId 3001 `
+                -Message "Full user and machine CDK/BlueZone cleanup completed. Target mode: $selectionType. Log: $script:LogFile"
+
+            $finalResult = 0
+        }
+
+        Write-Host ''
+        Write-Host 'Full user and machine cleanup finished.' -ForegroundColor Green
+        Write-Host "Log file: $script:LogFile"
+        exit $finalResult
+    }
+
+    default {
+        Write-Host ''
+        Write-Host "ERROR: Unsupported mode '$Mode'." -ForegroundColor Red
+        Show-ToolHelp
+        exit 2
+    }
+}
 ```
 
 ---
 
 ## Change Control
 
-Before making changes:
+Before changing this tool:
 
-- Confirm any MSI product codes still apply to the software in use.
-- Test the revised script in a VM or pilot device group.
-- Record the script version, modification date, author, purpose, and validation result.
-- Require review for changes to registry deletion, file deletion, profile targeting, backup logic, or MSI uninstall entries.
+- Confirm all MSI product codes still apply to your supported BlueZone/CDK/ADP versions.
+- Test revisions on representative Entra-joined, AD-joined, and workgroup endpoints as applicable.
+- Require review for modifications to profile targeting, backups, file deletion, registry removal, Edge cleanup, or MSI uninstalls.
+- Record version, date, author, rationale, and test result in `CHANGELOG.md`.
