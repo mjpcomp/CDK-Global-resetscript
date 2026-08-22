@@ -856,11 +856,11 @@ function Resolve-TargetProfiles {
                 $normalizedIdentity = $requestedIdentity.Trim()
                 $leafIdentity = ($normalizedIdentity -split '\\')[-1]
 
-                $match = $normalProfiles | Where-Object {
+                $match = @($normalProfiles | Where-Object {
                     $profileLeaf = Split-Path -Path $_.LocalPath -Leaf
                     $profileLeaf -ieq $normalizedIdentity -or
                     $profileLeaf -ieq $leafIdentity
-                }
+                })
 
                 if (@($match).Count -eq 1) {
                     $matchedProfiles += $match
