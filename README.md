@@ -97,17 +97,17 @@ Show help:
 When run without `-Mode`, the tool displays:
 
 ```text
- Basic profile reset[1]
+[1] Basic profile reset
     Reset cache and configuration data for the current account.
     Does not uninstall CDK Drive, BlueZone, or ADP components.
 
- Thorough machine cleanup[2]
+[2] Thorough machine cleanup
     Requires Administrator privileges.
     Removes machine-wide CDK/BlueZone/ADP components, cache data,
     residual folders, and selected registry entries.
     Does not alter any user profile.
 
- Full user and machine cleanup[3]
+[3] Full user and machine cleanup
     Requires Administrator privileges.
     Resets the current account profile, then runs machine cleanup.
     Use only when the current account is the profile to be reset.
